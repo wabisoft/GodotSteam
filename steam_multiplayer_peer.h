@@ -202,6 +202,10 @@ public:
 						pending_retry_packets.pop_front();
 						//toss the unreliable packet and move on?
 					}
+					if (errorCode == k_EResultNoConnection) {
+						// Something bad happened we need to close the session so Steam can restart it
+						SteamNetworkingMessages()->CloseSessionWithUser(networkIdentity);
+					}
 				}
 			}
 			return OK;
