@@ -192,6 +192,10 @@ public:
 					pending_retry_packets.pop_front();
 				} else {
 					auto errorString = SteamMultiplayerPeer::convertEResultToString(errorCode);
+					if (errorCode == k_EResultNoConnection || errorCode == k_EResultConnectFailed) {
+						// Something bad happened we need to close the session so Steam can restart it
+						SteamNetworkingMessages()->CloseSessionWithUser(networkIdentity);
+					}
 					if (packet->transfer_mode & k_nSteamNetworkingSend_Reliable) {
 						WARN_PRINT(String("Send Error! (reliable: will retry):") + errorString);
 						break;
@@ -201,10 +205,6 @@ public:
 						delete packet;
 						pending_retry_packets.pop_front();
 						//toss the unreliable packet and move on?
-					}
-					if (errorCode == k_EResultNoConnection || errorCode == k_EResultConnectFailed) {
-						// Something bad happened we need to close the session so Steam can restart it
-						SteamNetworkingMessages()->CloseSessionWithUser(networkIdentity);
 					}
 				}
 			}
