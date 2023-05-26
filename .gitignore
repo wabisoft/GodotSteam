@@ -28,3 +28,7 @@ doxygen/
 
 public/*
 testMultiplayer/versionLabel.gd
+bin/
+.sconsign.dblite
+
+.vscode/
