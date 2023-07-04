@@ -5,7 +5,6 @@ opts = Variables([], ARGUMENTS)
 
 # Gets the standard flags CC, CCX, etc.
 env = SConscript("../godot-cpp/SConstruct")
-
 addon_target = "../unchiinu/addons/godotsteam/"
 # Define our options
 opts.Add(PathVariable('target_path', 'The path where the lib is installed.', addon_target, PathVariable.PathAccept))
@@ -59,9 +58,9 @@ gdextension_path = "godotsteam.gdextension"
 # tweak this if you want to use different folders, or more folders, to store your source code in.
 env.Append(CPPPATH=['godotsteam/'])
 sources = Glob('godotsteam/*.cpp')
+sources += Glob('godotsteam/steam_multiplayer_peer/*.cpp')
 
 p = f"{env['target_path']}{arch_path_prefix}{env['target_name']}{env['suffix']}{env['SHLIBSUFFIX']}"
-breakpoint()
 library = env.SharedLibrary(target=p, source=sources)
 env.Depends(library, Command(addon_target + arch_path_prefix + steamworks_library, steam_lib_path + "/" + steamworks_library, Copy("$TARGET", "$SOURCE")))
 env.Depends(library, Command(addon_target + gdextension_path, gdextension_path, Copy("$TARGET", "$SOURCE")))
