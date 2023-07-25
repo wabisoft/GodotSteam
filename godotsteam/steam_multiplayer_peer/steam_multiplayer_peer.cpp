@@ -355,7 +355,7 @@ void SteamMultiplayerPeer::lobby_message_scb(LobbyChatMsg_t *call_data) {
     SteamConnection::Packet *packet = new SteamConnection::Packet;
 
     packet->sender.set_from_int(call_data->m_ulSteamIDUser);
-    if(SteamUser()->GetSteamID() == packet->sender.data)
+    if(SteamUser()->GetSteamID() == packet->sender)
         return;
 
     //These two following lines could probably be merged...
@@ -365,7 +365,7 @@ void SteamMultiplayerPeer::lobby_message_scb(LobbyChatMsg_t *call_data) {
     EChatEntryType type = (EChatEntryType)chat_type;
 
     //Get chat message data
-    packet->size = SteamMatchmaking()->GetLobbyChatEntry(lobby_id.data, call_data->m_iChatID, &(packet->sender.data), &(packet->data), MAX_STEAM_PACKET_SIZE, &type);
+    packet->size = SteamMatchmaking()->GetLobbyChatEntry(lobby_id, call_data->m_iChatID, &(packet->sender.data), &(packet->data), MAX_STEAM_PACKET_SIZE, &type);
     packet->channel = -1;
 
 
@@ -407,8 +407,8 @@ void SteamMultiplayerPeer::network_messages_session_request_scb(SteamNetworkingM
     int currentLobbySize = SteamMatchmaking()->GetNumLobbyMembers(lobby_id.data);
     for(int i = 0; i < currentLobbySize; i++) {
         if(SteamMatchmaking()->GetLobbyMemberByIndex(lobby_id.data, i) == requester) {
-            bool didWork = SteamNetworkingMessages()->AcceptSessionWithUser(t->m_identityRemote);
-            ERR_FAIL_COND_MSG(didWork, "Message failed to join.");
+            bool success = SteamNetworkingMessages()->AcceptSessionWithUser(t->m_identityRemote);
+            ERR_FAIL_COND_MSG(success, "Message failed to join.");
             return;
         }
     }
@@ -437,11 +437,11 @@ void SteamMultiplayerPeer::lobby_joined_scb(LobbyEnter_t *lobbyData) {
         return;
 
     if(lobbyData->m_EChatRoomEnterResponse == k_EChatRoomEnterResponseSuccess) {
-        ISteamMatchmaking* sm = SteamMatchmaking();   //Is this meant to be a singleton?
+        ISteamMatchmaking* sm = SteamMatchmaking();
 
         lobby_owner.set_from_CSteamID(sm->GetLobbyOwner(lobby_id.data));
         if(unique_id == 1) {
-            //already the hose, no need to proceed further
+            //already the host, no need to proceed further
         } else {
             lobby_state = LobbyState::LOBBY_STATE_CLIENT;
             add_pending_peer(lobby_owner);
@@ -625,7 +625,7 @@ void SteamMultiplayerPeer::_bind_methods() {
 
 SteamMultiplayerPeer::SteamMultiplayerPeer() :
     callbackLobbyMessage(this,                  &SteamMultiplayerPeer::lobby_message_scb),
-    callbackLobbyChatUpdate(this,                &SteamMultiplayerPeer::lobby_chat_update_scb),
+    callbackLobbyChatUpdate(this,               &SteamMultiplayerPeer::lobby_chat_update_scb),
     callbackNetworkMessagesSessionRequest(this, &SteamMultiplayerPeer::network_messages_session_request_scb),
     callbackNetworkMessagesSessionFailed(this,  &SteamMultiplayerPeer::network_messages_session_failed_scb),
     callbackLobbyJoined(this,                   &SteamMultiplayerPeer::lobby_joined_scb),

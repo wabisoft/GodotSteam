@@ -48,6 +48,7 @@ public:
 
     inline bool operator==(const SteamID &val) const { return data == val.data; }
     inline bool operator!=(const SteamID &val) const { return data != val.data; }
+    inline operator CSteamID() const { return data; }
 
     static void _bind_methods();
 };
