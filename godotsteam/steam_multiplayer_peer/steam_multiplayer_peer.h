@@ -72,7 +72,7 @@ public:
 //    void _set_transfer_channel(int32_t p_channel) override;
 //    int32_t _get_transfer_channel() const override;
 //    void _set_transfer_mode(TransferMode p_mode) override;
-//    MultiplayerPeer::TransferMode _get_transfer_mode() const override;
+    MultiplayerPeer::TransferMode _get_transfer_mode() const override;
     void _set_target_peer(int32_t p_peer_id) override;
     int32_t _get_packet_peer() const override;
     bool _is_server() const override;

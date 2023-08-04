@@ -5,7 +5,7 @@ opts = Variables([], ARGUMENTS)
 
 # Gets the standard flags CC, CCX, etc.
 env = SConscript("../godot-cpp/SConstruct")
-addon_target = "../unchiinu/addons/godotsteam/"
+addon_target = "../unchiinu-game/addons/godotsteam/"
 # Define our options
 opts.Add(PathVariable('target_path', 'The path where the lib is installed.', addon_target, PathVariable.PathAccept))
 opts.Add(PathVariable('target_name', 'The library name.', 'godotsteam', PathVariable.PathAccept))

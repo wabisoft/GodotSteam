@@ -667,10 +667,12 @@ SteamMultiplayerPeer::~SteamMultiplayerPeer()
 
 //}
 
-//MultiplayerPeer::TransferMode SteamMultiplayerPeer::_get_transfer_mode() const
-//{
-
-//}
+MultiplayerPeer::TransferMode SteamMultiplayerPeer::_get_transfer_mode() const
+{
+    // We're using ISteamNetworkingMessages which is an rtc udp like connection
+    // messages are sent in order but no ack is performed.
+    return MultiplayerPeer::TransferMode::TRANSFER_MODE_UNRELIABLE_ORDERED;
+}
 
 //void SteamMultiplayerPeer::_set_refuse_new_connections(bool p_enable)
 //{
