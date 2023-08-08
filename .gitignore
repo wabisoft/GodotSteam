@@ -12,3 +12,5 @@ bin/
 .sconsign.dblite
 godotsteam/sdk/*
 .vscode/
+*.pdb
+*.dll

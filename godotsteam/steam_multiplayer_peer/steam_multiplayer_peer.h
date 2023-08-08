@@ -109,22 +109,37 @@ public:
     } lobby_state = LobbyState::LOBBY_STATE_NOT_CONNECTED;
     LobbyState get_state() { return lobby_state; }
 
-    // Nagle's Algorithm: Inhibit the sending of new TCP segments, when new outgoing data arrives from the user,
-    // if any previously transmitted data on the connection remains unacknowledged
-    //
-    // Exists to reduce small packets and avoid counterproductive overhead
+    /// @brief Used to control Steam's for employment of Nagle's algorithm on out going packets
+    /// if true then Nagle's algorithm will not be employed for any out going packets for as long as it is true
+    /// steam recommends use of Nagle's algorithm unless you are sure you do not want it
+    /// See k_nSteamNetworkingSend_NoNagle in steamnetworkingtypes.h
     bool no_nagle = false;
+
+    /// @brief set the value of the no_nagle property
+    /// @param value the value assigned to the no_nagle property
     void set_no_nagle(bool value) {
         no_nagle = value;
     }
+
+    /// @brief get the value currently assigned to the no_nagle property
+    /// @return the value of no_nagle
     bool get_no_nagle() {
         return no_nagle;
     }
 
+    /// @brief Used to tell steam to drop all outgoing packets if they cannot be sent "very soon" without delay 
+    /// if set to true then all packets that would be delayed are just dropped
+    /// this is only applicable for unreliable packets, if the transfer mode is reliable then this flag will do nothing
     bool no_delay = false;  //What?
+
+    /// @brief set the value of the no_delay property
+    /// @param value the value assigned to the no_delay property
     void set_no_delay(bool value) {
         no_delay = value;
     }
+
+    /// @brief get the value currently assigned to the no_delay property
+    /// @return the value of no_delay
     bool get_no_delay() {
         return no_delay;
     }

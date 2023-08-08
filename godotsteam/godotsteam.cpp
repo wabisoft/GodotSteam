@@ -1258,15 +1258,15 @@ void Steam::getPlayerAvatar(int size, uint64_t steam_id){
 	if(SteamFriends() != NULL && size > 0 && size < 4){
 		int handle = -2;
 		switch(size){
-			case 1:{
+			case AvatarSizes::AVATAR_SMALL:{
 				handle = getSmallFriendAvatar(steam_id);
 				size = 32; break;
 			}
-			case 2:{
+			case AvatarSizes::AVATAR_MEDIUM:{
 				handle = getMediumFriendAvatar(steam_id);
 				size = 64; break;
 			}
-			case 3:{
+			case AvatarSizes::AVATAR_LARGE:{
 				handle = getLargeFriendAvatar(steam_id);
 				size = 184; break;
 			}

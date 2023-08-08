@@ -1,12 +1,16 @@
 #!python
 import os
 
-opts = Variables([], ARGUMENTS)
-
+vars = Variables()
+vars.Add('ADDONS_FOLDER', 'Set to the folder where the scons build should put bins', "bin")
+vars.Add("GODOT_CPP_FOLDER", "Set to the folder where godot-cpp is located", "../godot-cpp")
 # Gets the standard flags CC, CCX, etc.
-env = SConscript("../godot-cpp/SConstruct")
-addon_target = "../unchiinu-game/addons/godotsteam/"
+env = SConscript(f"{vars.args['GODOT_CPP_FOLDER']}/SConstruct")
+addon_target = f"{vars.args['ADDONS_FOLDER']}"
+# env = SConscript("../godot-cpp/SConstruct")
+# addon_target = "../unchiinu-game/addons/godotsteam/"
 # Define our options
+opts = Variables([], ARGUMENTS)
 opts.Add(PathVariable('target_path', 'The path where the lib is installed.', addon_target, PathVariable.PathAccept))
 opts.Add(PathVariable('target_name', 'The library name.', 'godotsteam', PathVariable.PathAccept))
 

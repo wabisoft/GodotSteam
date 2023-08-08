@@ -122,6 +122,7 @@ bool SteamMultiplayerPeer::_is_server_relay_supported() const   //This provides 
     return as_relay;
 }
 
+// TODO: the _disconnect_peer method must be implemented, figure out how that is done with SteamNetworkMessaging
 void SteamMultiplayerPeer::_disconnect_peer(int32_t p_peer, bool p_force)   //This is a TODO.
 {
     Steam::get_singleton()->steamworksError("ERROR: SteamMultiplayerPeer::_disconnect_peer not yet implemented");
