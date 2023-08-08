@@ -4,9 +4,14 @@ import os
 vars = Variables()
 vars.Add('ADDONS_FOLDER', 'Set to the folder where the scons build should put bins', "bin")
 vars.Add("GODOT_CPP_FOLDER", "Set to the folder where godot-cpp is located", "../godot-cpp")
+vars.Add("STEAMWORKS_SDK_PATH", "Set to the folder where the steamworks sdk is located")
 # Gets the standard flags CC, CCX, etc.
 env = SConscript(f"{vars.args['GODOT_CPP_FOLDER']}/SConstruct")
 addon_target = f"{vars.args['ADDONS_FOLDER']}"
+steam_lib_path = f"{vars.args['STEAMWORKS_SDK_PATH']}/redistributable_bin"
+steam_include_path = f"{vars.args['STEAMWORKS_SDK_PATH']}/public"
+
+# steam_lib_path = "godotsteam/sdk/1.57/redistributable_bin"
 # env = SConscript("../godot-cpp/SConstruct")
 # addon_target = "../unchiinu-game/addons/godotsteam/"
 # Define our options
@@ -14,8 +19,6 @@ opts = Variables([], ARGUMENTS)
 opts.Add(PathVariable('target_path', 'The path where the lib is installed.', addon_target, PathVariable.PathAccept))
 opts.Add(PathVariable('target_name', 'The library name.', 'godotsteam', PathVariable.PathAccept))
 
-# Local dependency paths, adapt them to your setup
-steam_lib_path = "godotsteam/sdk/1.57/redistributable_bin"
 
 # Updates the environment with the option variables.
 opts.Update(env)
@@ -53,7 +56,7 @@ elif env['platform'] == "windows":
 
 # make sure our binding library is properly includes
 env.Append(LIBPATH=[steam_lib_path])
-env.Append(CPPPATH=['godotsteam/sdk/1.57/public'])
+env.Append(CPPPATH=[steam_include_path])
 env.Append(LIBS=[
     steamworks_library.replace(".dll", "")
 ])

@@ -63,7 +63,7 @@ Error SteamMultiplayerPeer::create_lobby(Steam::LobbyType lobbyType, int max_pla
 //Error SteamMultiplayerPeer::join_lobby(SteamID lobbyId) {
 Error SteamMultiplayerPeer::join_lobby(uint64_t lobbyId) {
     ERR_FAIL_COND_V_MSG(SteamMatchmaking() == NULL, ERR_DOES_NOT_EXIST, "`SteamMatchmaking()` is null.");
-    ERR_FAIL_COND_V_MSG(lobby_state != LobbyState::LOBBY_STATE_NOT_CONNECTED, ERR_ALREADY_IN_USE, "Cannot join a lobby, while in a lobby.");
+    // ERR_FAIL_COND_V_MSG(lobby_state != LobbyState::LOBBY_STATE_NOT_CONNECTED, ERR_ALREADY_IN_USE, "Cannot join a lobby, while in a lobby.");
 
     if(SteamMatchmaking() != NULL)  //Is this necessary?
     {
@@ -309,7 +309,7 @@ Ref<SteamConnection> SteamMultiplayerPeer::get_connection_by_peer(int peer_id) {
 }
 
 void SteamMultiplayerPeer::add_connection_peer(const SteamID &steamId, int peer_id) {
-    ERR_FAIL_COND_MSG(steamId != SteamUser()->GetSteamID(), "Cannot add self as a new peer.");
+    ERR_FAIL_COND_MSG(steamId == SteamUser()->GetSteamID(), "Cannot add self as a new peer.");
 
     Ref<SteamConnection> connectionData = Ref<SteamConnection>(memnew(SteamConnection(steamId)));
     connections_by_steamId64[steamId.to_int()] = connectionData;
@@ -552,7 +552,7 @@ Dictionary SteamMultiplayerPeer::get_peer_map() {
 void SteamMultiplayerPeer::_bind_methods() {
     //DEFVAL simply surrounds teh value in parentheses to avoid repeating a default value multiple times, overriding operator precedence
     ClassDB::bind_method(D_METHOD("create_lobby", "lobby_type", "max_players"), &SteamMultiplayerPeer::create_lobby, DEFVAL(32));
-    ClassDB::bind_method(D_METHOD("connect_lobby", "lobby_id"), &SteamMultiplayerPeer::join_lobby);
+    ClassDB::bind_method(D_METHOD("join_lobby", "lobby_id"), &SteamMultiplayerPeer::join_lobby);
     ClassDB::bind_method(D_METHOD("get_state"), &SteamMultiplayerPeer::get_state);
     ClassDB::bind_method(D_METHOD("collect_debug_data"), &SteamMultiplayerPeer::collect_debug_data);
 
