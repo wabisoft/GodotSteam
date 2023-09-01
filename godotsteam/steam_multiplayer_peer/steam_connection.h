@@ -11,7 +11,6 @@
 #include "../godotsteam.h"
 #include "steam_id.h"
 
-#define MAX_STEAM_PACKET_SIZE k_cbMaxSteamNetworkingSocketsMessageSizeSend  //This was previously in godotsteam.h, but no longer...
 
 class SteamConnection : public RefCounted
 {

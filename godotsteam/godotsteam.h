@@ -39,6 +39,8 @@
 
 using namespace godot;
 
+#define MAX_STEAM_PACKET_SIZE k_cbMaxSteamNetworkingSocketsMessageSizeSend 
+
 class Steam: public Object {
 	GDCLASS(Steam, Object);
 	static Steam *singleton;

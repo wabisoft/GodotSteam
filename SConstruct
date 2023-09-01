@@ -66,6 +66,7 @@ gdextension_path = "godotsteam.gdextension"
 env.Append(CPPPATH=['godotsteam/'])
 sources = Glob('godotsteam/*.cpp')
 sources += Glob('godotsteam/steam_multiplayer_peer/*.cpp')
+sources += Glob('godotsteam/wabisoft_steam_peer/*.cpp')
 
 p = f"{env['target_path']}{arch_path_prefix}{env['target_name']}{env['suffix']}{env['SHLIBSUFFIX']}"
 library = env.SharedLibrary(target=p, source=sources)
