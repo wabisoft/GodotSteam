@@ -15,14 +15,27 @@ SteamPacket::SteamPacket(const uint8_t* in, int32_t size, const TransferInfo& in
     std::copy(in, in + size, bytes_);
 }
 
-
-WbiSteamPeer::WbiSteamPeer()
+void SteamPeerConnection::init()
 {
+    // TODO: (owen) start connection with a peer (maybe use steam sockets api so its more obvious when the connection is started and stopped??)
 
 }
 
+WbiSteamPeer::WbiSteamPeer()
+{ }
+
 WbiSteamPeer::WbiSteamPeer(uint64_t steam_lobby_id)
-{}
+    : lobbyId_(steam_lobby_id)
+{
+    ERR_FAIL_COND_MSG(SteamMatchmaking() == nullptr, "Steam matchmaking not initialized cannot create instance of WbiSteamPeer");
+    int lobbyCount = SteamMatchmaking()->GetNumLobbyMembers();
+    for(int i = 0; i < lobbyCount; ++i)
+    {
+        CSteamID peer = SteamMatchmaking()->GetLobbyMemberByIndex(lobbyId_, i);
+        SteamPeerConnection& conn = peerConnections_[peer.ConvertToUint64()] = SteamPeerConnection(peer);
+        conn.init();
+    }
+}
 
 // Called when the multiplayer peer should be immediately closed (see MultiplayerPeer.close()).
 void WbiSteamPeer::_close()

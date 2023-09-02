@@ -3,6 +3,7 @@
 #include <godot_cpp/classes/multiplayer_peer_extension.hpp>
 #include <godot_cpp/classes/wrapped.hpp>
 #include <godot_cpp/templates/vector.hpp>
+#include <godot_cpp/templates/hash_map.hpp>
 
 #include "../godotsteam.h"
 
@@ -38,6 +39,17 @@ namespace godot {
         MultiplayerPeer::TransferMode get_mode() const { return info_.mode_; }
         CSteamID get_peer() const { return info_.peer_; }
 
+    };
+
+    struct SteamPeerConnection
+    {
+        SteamPeerConnection() {}
+        SteamPeerConnection(CSteamID peer) : peer_(peer) {}
+
+        CSteamID peer_ = {};
+        MultiplayerPeer::ConnectionStatus connectionStatus_ = MultiplayerPeer::ConnectionStatus::CONNECTION_DISCONNECTED;
+
+        void init();
     };
 
 
@@ -92,8 +104,10 @@ namespace godot {
     private:
         godot::Vector<SteamPacket> incoming_packets_;
         godot::Vector<SteamPacket> outgoing_packets_;
+        godot::HashMap<uint64_t, SteamPeerConnection> peerConnections_; // CSteamID -> SteamPeerConnection
         SteamPacket currentReceivingPacket_; // godot just wants pointers so we'll hold a reference untill they ask again
         bool refuse_connections_ = false; // TODO: (owen) use a state machine? we have to support setters...
         TransferInfo target_;
+        CSteamID lobbyId_ = {};
     };
 }
