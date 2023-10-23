@@ -12,7 +12,13 @@ namespace godot {
     enum class TransferChannel : int32_t
     {
         Default = 0,
+        Init,
+        Max // This should always be the last channel, add more as you see fit. DO NOT send data on this channel, the receiver will not read it
     };
+    TransferChannel& operator++(TransferChannel& channel)
+    {
+       return channel = static_cast<TransferChannel>(static_cast<int32_t>(channel)+1);
+    }
     class WbiSteamPeer;
 
     struct TransferInfo 
@@ -27,6 +33,7 @@ namespace godot {
         uint8_t bytes_[MAX_STEAM_PACKET_SIZE] = {}; // data for the  packet
         size_t size_ = 0; // size of the data stored in the bytes_ buffer
         TransferInfo info_ = {};
+        SteamNetworkingIdentity networkId_ = {};
 
     public:
         SteamPacket() {}
@@ -38,18 +45,36 @@ namespace godot {
         TransferChannel get_channel() const { return info_.channel_; }
         MultiplayerPeer::TransferMode get_mode() const { return info_.mode_; }
         CSteamID get_peer() const { return info_.peer_; }
+        const SteamNetworkingIdentity& get_network_identity() const { return networkId_; }
 
     };
 
-    struct SteamPeerConnection
-    {
-        SteamPeerConnection() {}
-        SteamPeerConnection(CSteamID peer) : peer_(peer) {}
 
-        CSteamID peer_ = {};
-        MultiplayerPeer::ConnectionStatus connectionStatus_ = MultiplayerPeer::ConnectionStatus::CONNECTION_DISCONNECTED;
+    class SteamPeerConnection
+    {
+    public:
+        SteamPeerConnection() {}
+        SteamPeerConnection(const SteamPeerConnection& other)
+            : SteamPeerConnection(other.peer_)
+        {}
+        explicit SteamPeerConnection(CSteamID peer)
+            : peer_(peer)
+        {
+            networkId_.SetSteamID(peer_);
+        }
+
+        CSteamID getPeer() const { return peer_; }
+        MultiplayerPeer::ConnectionStatus getStatus() const { return connectionStatus_; }
 
         void init();
+        void close();
+        void onPeerConnectionRequest(const SteamNetworkingIdentity& peerNetworkIdentity);
+        void setStatus(MultiplayerPeer::ConnectionStatus);
+    private:
+
+        CSteamID peer_ = {};
+        SteamNetworkingIdentity networkId_ = {};
+        MultiplayerPeer::ConnectionStatus connectionStatus_;
     };
 
 
@@ -59,14 +84,10 @@ namespace godot {
     private:
         _FORCE_INLINE_ bool _is_active() const { return true; } // TODO: (owen) Do I need this?
 
-        const SteamPacket& peakPacket() const { return *incoming_packets_.begin(); };
-        SteamPacket&& popPacket()
-        {
-            auto packet = std::move(*incoming_packets_.begin());
-            incoming_packets_.remove_at(0);
-            return std::move(packet);
-        };
-
+        const SteamPacket& WbiSteamPeer::peakPacket() const;
+        SteamPacket&& WbiSteamPeer::popPacket();
+        SteamPeerConnection* findConnection(CSteamID peer);
+        CSteamID godotToSteam(int32_t p_peer);
 
     protected:
         static void _bind_methods();
@@ -74,7 +95,16 @@ namespace godot {
     public:
         // Ctor
         WbiSteamPeer();
+        // The plan is to have the SteamPeer take a lobby id as input and have it make connections to every other user in the lobby
         explicit WbiSteamPeer(uint64_t steam_lobby_id);
+
+        void setConnectionStatus(SteamPeerConnection* connection, ConnectionStatus status);
+        void receiveMessageOnChannel(SteamNetworkingMessage_t* message, TransferChannel channel);
+
+        // Steam callbacks 
+        STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionRequest, SteamNetworkingMessagesSessionRequest_t);
+        STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionFailed, SteamNetworkingMessagesSessionFailed_t);
+
         
         // MultiplayerPeerExtension Overrides
         void _close() override;
@@ -105,6 +135,7 @@ namespace godot {
         godot::Vector<SteamPacket> incoming_packets_;
         godot::Vector<SteamPacket> outgoing_packets_;
         godot::HashMap<uint64_t, SteamPeerConnection> peerConnections_; // CSteamID -> SteamPeerConnection
+        godot::Vector<CSteamID> godotToSteamIds_; // godot unique network id -> CSteamID 
         SteamPacket currentReceivingPacket_; // godot just wants pointers so we'll hold a reference untill they ask again
         bool refuse_connections_ = false; // TODO: (owen) use a state machine? we have to support setters...
         TransferInfo target_;

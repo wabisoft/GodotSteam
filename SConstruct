@@ -5,11 +5,13 @@ vars = Variables()
 vars.Add('ADDONS_FOLDER', 'Set to the folder where the scons build should put bins', "bin")
 vars.Add("GODOT_CPP_FOLDER", "Set to the folder where godot-cpp is located", "../godot-cpp")
 vars.Add("STEAMWORKS_SDK_PATH", "Set to the folder where the steamworks sdk is located")
+vars.Add("WABISOFT_CPP_FOLDER", "Set to the folder where the wabisoft cpp util headers are located")
 # Gets the standard flags CC, CCX, etc.
 env = SConscript(f"{vars.args['GODOT_CPP_FOLDER']}/SConstruct")
 addon_target = f"{vars.args['ADDONS_FOLDER']}"
 steam_lib_path = f"{vars.args['STEAMWORKS_SDK_PATH']}/redistributable_bin"
 steam_include_path = f"{vars.args['STEAMWORKS_SDK_PATH']}/public"
+wabisoft_include_path = f"{vars.args['WABISOFT_CPP_FOLDER']}/include"
 
 # steam_lib_path = "godotsteam/sdk/1.57/redistributable_bin"
 # env = SConscript("../godot-cpp/SConstruct")
@@ -56,17 +58,23 @@ elif env['platform'] == "windows":
 
 # make sure our binding library is properly includes
 env.Append(LIBPATH=[steam_lib_path])
-env.Append(CPPPATH=[steam_include_path])
+env.Append(CPPPATH=[steam_include_path, wabisoft_include_path])
 env.Append(LIBS=[
     steamworks_library.replace(".dll", "")
 ])
 
 gdextension_path = "godotsteam.gdextension"
 # tweak this if you want to use different folders, or more folders, to store your source code in.
-env.Append(CPPPATH=['godotsteam/'])
-sources = Glob('godotsteam/*.cpp')
-sources += Glob('godotsteam/steam_multiplayer_peer/*.cpp')
-sources += Glob('godotsteam/wabisoft_steam_peer/*.cpp')
+env.Append(CPPPATH=['godotsteam/src'])
+sources = []
+sources.extend(Glob('godotsteam/src/*.cpp'))
+sources.extend(Glob('godotsteam/src/*/*.cpp'))
+# sources += Glob('godotsteam/steam_multiplayer_peer/*.cpp')
+# sources += Glob('godotsteam/wabisoft_steam_peer/*.cpp')
+print("Compiling:")
+for f in sources:
+    print(f"\t{f.name}")
+
 
 p = f"{env['target_path']}{arch_path_prefix}{env['target_name']}{env['suffix']}{env['SHLIBSUFFIX']}"
 library = env.SharedLibrary(target=p, source=sources)
