@@ -10,6 +10,7 @@
 #include "steam_multiplayer_peer/steam_multiplayer_peer.h"
 #include "steam_multiplayer_peer/steam_id.h"
 #include "steam_multiplayer_peer/steam_connection.h"
+#include "wabisoft_steam_peer/wabisoft_steam_peer.h"
 
 #include "godotsteam.h"
 
@@ -23,6 +24,7 @@ void initialize_godotsteam(ModuleInitializationLevel level){
 		ClassDB::register_class<SteamMultiplayerPeer>();
         ClassDB::register_class<SteamConnection>();
         ClassDB::register_class<SteamID>();
+		ClassDB::register_class<WbiSteamPeer>();
 		SteamPtr = memnew(Steam);
 		Engine::get_singleton()->register_singleton("Steam", Steam::get_singleton());
 	}

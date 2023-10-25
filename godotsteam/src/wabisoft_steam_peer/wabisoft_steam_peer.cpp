@@ -16,12 +16,6 @@ using ConnectionStatus = MultiplayerPeer::ConnectionStatus;
 
 namespace
 {
-    CSteamID userSteamID()
-    {
-        CSteamID ret;
-        ERR_FAIL_COND_V_MSG(SteamUser() == nullptr, ret,"Steam is not initialized. Cannot create instance of WbiSteamPeer");
-        return SteamUser()->GetSteamID();
-    }
     EResult send_packet(const SteamPacket& packet)
     {
         ERR_FAIL_COND_V_MSG(SteamNetworkingMessages() == nullptr, k_EResultFail, "Steam network messages not initialized cannot send packets");
@@ -89,13 +83,12 @@ void SteamPeerConnection::setStatus(MultiplayerPeer::ConnectionStatus status)
     connectionStatus_ = status;
 }
 
-void SteamPeerConnection::init()
+void SteamPeerConnection::init(CSteamID userSteamId)
 {
-    ERR_FAIL_COND(userSteamID().IsValid());
-    ERR_FAIL_COND_MSG(userSteamID() > peer_, "Attempting to initiate a connection for a peer with a steam id that is less than ours");
+    ERR_FAIL_COND(!userSteamId.IsValid());
     // TODO: (owen) add timeouts
     setStatus(ConnectionStatus::CONNECTION_CONNECTING);
-    if(userSteamID() < peer_) // if we are the lesser steam id then we initiate the connection with a ping
+    if(userSteamId < peer_) // if we are the lesser steam id then we initiate the connection with a ping
     {
         if(!ping(peer_))
         {
@@ -115,24 +108,58 @@ void SteamPeerConnection::onPeerConnectionRequest(const SteamNetworkingIdentity&
 {
 }
 
+void WbiSteamPeer::_bind_methods()
+{
+    ClassDB::bind_method(D_METHOD("init", "steam_lobby_id"), &WbiSteamPeer::init);
+}
+
 WbiSteamPeer::WbiSteamPeer()
 { }
 
-WbiSteamPeer::WbiSteamPeer(uint64_t steam_lobby_id)
-    : lobbyId_(steam_lobby_id) 
+
+void WbiSteamPeer::addConnection(CSteamID peer)
 {
+    godotToSteamIds_.push_back(peer);
+    SteamPeerConnection& conn = peerConnections_[peer.ConvertToUint64()] = SteamPeerConnection(peer);
+    conn.init(userSteamId_);
+    // FIXME: (owen) this very naive and makes the peer with the smallest steam id will just be the host 
+    godotToSteamIds_.sort(); // we make sure every peer has the same order so the conversion is consistent across clients
+}
+
+void WbiSteamPeer::removeConnection(CSteamID peer)
+{
+    _disconnect_peer(peer.ConvertToUint64(), false);
+    godotToSteamIds_.erase(peer);
+    peerConnections_.erase(peer.ConvertToUint64());
+}
+
+ConnectionStatus WbiSteamPeer::getConnectionStatus(uint64_t peer)
+{
+    auto connection = findConnection(peer);
+    if(connection)
+    {
+        return connection->getStatus();
+    }
+    return ConnectionStatus::CONNECTION_DISCONNECTED;
+}
+
+void WbiSteamPeer::init(uint64_t steam_lobby_id)
+{
+    *this = WbiSteamPeer(); // FIXME: this feels dirty
+    ERR_FAIL_COND_MSG(SteamUser() == nullptr, "Steam is not initialized. Cannot create instance of WbiSteamPeer");
+    userSteamId_ = SteamUser()->GetSteamID();
+    lobbyId_ = steam_lobby_id;
     ERR_FAIL_COND_MSG(SteamMatchmaking() == nullptr, "Steam matchmaking not initialized. Cannot create instance of WbiSteamPeer");
-    ERR_FAIL_COND(userSteamID().IsValid());
+    ERR_FAIL_COND(!userSteamId_.IsValid());
     int lobbyCount = SteamMatchmaking()->GetNumLobbyMembers(lobbyId_);
     for(int i = 0; i < lobbyCount; ++i)
     {
         CSteamID peer = SteamMatchmaking()->GetLobbyMemberByIndex(lobbyId_, i);
-        godotToSteamIds_.push_back(peer);
-        SteamPeerConnection& conn = peerConnections_[peer.ConvertToUint64()] = SteamPeerConnection(peer);
-        conn.init();
+        if(peer == userSteamId_)
+        {
+            continue; // we don't need to connect to ourselves
+        }
     }
-    godotToSteamIds_.sort(); // we make sure every peer has the same order so the conversion is consistent across clients
-    // FIXME: (owen) this very naive and makes the peer with the smallest steam id will just be the host 
 }
 
 const SteamPacket& WbiSteamPeer::peakPacket() const
@@ -189,6 +216,32 @@ void WbiSteamPeer::OnSteamNetworkingMessagesSessionFailed(SteamNetworkingMessage
     auto connection = findConnection(peer);
     ERR_FAIL_COND_MSG(connection == nullptr, String("Got SteamNetworkingMessagesSessionFailed_t for unexpected peer {0}").format(peer.ConvertToUint64()));
     setConnectionStatus(connection, ConnectionStatus::CONNECTION_DISCONNECTED);
+}
+/*
+	k_EChatMemberStateChangeEntered			= 0x0001,		// This user has joined or is joining the chat room
+	k_EChatMemberStateChangeLeft			= 0x0002,		// This user has left or is leaving the chat room
+	k_EChatMemberStateChangeDisconnected	= 0x0004,		// User disconnected without leaving the chat first
+	k_EChatMemberStateChangeKicked			= 0x0008,		// User kicked
+	k_EChatMemberStateChangeBanned			= 0x0010,		// User kicked and banned
+*/
+
+void WbiSteamPeer::OnSteamLobbyChatUpdate(LobbyChatUpdate_t* update)
+{
+
+    if(update->m_ulSteamIDLobby != lobbyId_.ConvertToUint64())
+    {
+        return;
+    }
+    if((update->m_rgfChatMemberStateChange & k_EChatMemberStateChangeEntered)
+        && update->m_ulSteamIDUserChanged != userSteamId_.ConvertToUint64())
+    {
+        // add the user
+        addConnection(CSteamID(update->m_ulSteamIDUserChanged));
+    }
+    if(BChatMemberStateChangeRemoved(update->m_rgfChatMemberStateChange))
+    {
+        removeConnection(CSteamID(update->m_ulSteamIDUserChanged));
+    }
 }
 
 // Called when the multiplayer peer should be immediately closed (see MultiplayerPeer.close()).
@@ -420,9 +473,9 @@ void WbiSteamPeer::setConnectionStatus(SteamPeerConnection* connection, Connecti
 void WbiSteamPeer::receiveMessageOnChannel(SteamNetworkingMessage_t* message, TransferChannel channel)
 {
     CSteamID peer = message->m_identityPeer.GetSteamID();
-    ERR_FAIL_MSG(!peer.IsValid(), "SteamId for message peer is invalid");
+    ERR_FAIL_COND_MSG(!peer.IsValid(), "SteamId for message peer is invalid");
     SteamPeerConnection* connection = findConnection(peer);
-    ERR_FAIL_MSG(connection == nullptr, String("Connection for peer {0} who sent a message not found").format(peer.ConvertToUint64()));
+    ERR_FAIL_COND_MSG(connection == nullptr, String("Connection for peer {0} who sent a message not found").format(peer.ConvertToUint64()));
     switch(channel)
     {
         case TransferChannel::Default:
@@ -434,7 +487,7 @@ void WbiSteamPeer::receiveMessageOnChannel(SteamNetworkingMessage_t* message, Tr
         case TransferChannel::Init:
         {
             // For now we only expect to receive pings and pongs here
-            ERR_FAIL_MSG(message->GetSize() != k_InitMessageLength, String("Init messages may only be one of \"{0}\" or \"{1}\"").format(k_Ping, k_Pong));
+            ERR_FAIL_COND_MSG(message->GetSize() != k_InitMessageLength, String("Init messages may only be one of \"{0}\" or \"{1}\"").format(k_Ping, k_Pong));
             if(strcmp((const char*)message->GetData(), k_Ping) == 0)
             {
                 SteamPacket packet((uint8_t*)k_Pong, std::size(k_Ping), {peer, TransferChannel::Init});

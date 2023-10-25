@@ -15,7 +15,7 @@ namespace godot {
         Init,
         Max // This should always be the last channel, add more as you see fit. DO NOT send data on this channel, the receiver will not read it
     };
-    TransferChannel& operator++(TransferChannel& channel)
+    inline TransferChannel& operator++(TransferChannel& channel)
     {
        return channel = static_cast<TransferChannel>(static_cast<int32_t>(channel)+1);
     }
@@ -66,7 +66,7 @@ namespace godot {
         CSteamID getPeer() const { return peer_; }
         MultiplayerPeer::ConnectionStatus getStatus() const { return connectionStatus_; }
 
-        void init();
+        void init(CSteamID userSteamId);
         void close();
         void onPeerConnectionRequest(const SteamNetworkingIdentity& peerNetworkIdentity);
         void setStatus(MultiplayerPeer::ConnectionStatus);
@@ -96,14 +96,21 @@ namespace godot {
         // Ctor
         WbiSteamPeer();
         // The plan is to have the SteamPeer take a lobby id as input and have it make connections to every other user in the lobby
-        explicit WbiSteamPeer(uint64_t steam_lobby_id);
+        // Bound methods
+        void init(uint64_t steam_lobby_id);
+        ConnectionStatus getConnectionStatus(uint64_t peer);
 
         void setConnectionStatus(SteamPeerConnection* connection, ConnectionStatus status);
         void receiveMessageOnChannel(SteamNetworkingMessage_t* message, TransferChannel channel);
 
+        void addConnection(CSteamID peer);
+        void removeConnection(CSteamID peer);
+
+
         // Steam callbacks 
         STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionRequest, SteamNetworkingMessagesSessionRequest_t);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionFailed, SteamNetworkingMessagesSessionFailed_t);
+        STEAM_CALLBACK(WbiSteamPeer, OnSteamLobbyChatUpdate, LobbyChatUpdate_t);
 
         
         // MultiplayerPeerExtension Overrides
@@ -140,5 +147,6 @@ namespace godot {
         bool refuse_connections_ = false; // TODO: (owen) use a state machine? we have to support setters...
         TransferInfo target_;
         CSteamID lobbyId_ = {};
+        CSteamID userSteamId_;
     };
 }
