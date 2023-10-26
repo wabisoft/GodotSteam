@@ -79,7 +79,7 @@ void SteamPeerConnection::setStatus(MultiplayerPeer::ConnectionStatus status)
     {
         return pair.first == connectionStatus_ && pair.second == status;
     });
-    ERR_FAIL_COND_MSG(it == std::end(connectionFSM), String("Invalid connection status transition {0} -> {1}").format(toString(connectionStatus_), toString(status)));
+    ERR_FAIL_COND_MSG(it == std::end(connectionFSM), String("Invalid connection status transition {0} -> {1}").format(Array::make(toString(connectionStatus_), toString(status))));
     connectionStatus_ = status;
 }
 
@@ -119,6 +119,7 @@ WbiSteamPeer::WbiSteamPeer()
 
 void WbiSteamPeer::addConnection(CSteamID peer)
 {
+    ERR_FAIL_COND_MSG(peerConnections_.has(peer.ConvertToUint64()), "Connection already exists");
     godotToSteamIds_.push_back(peer);
     SteamPeerConnection& conn = peerConnections_[peer.ConvertToUint64()] = SteamPeerConnection(peer);
     conn.init(userSteamId_);
@@ -159,6 +160,7 @@ void WbiSteamPeer::init(uint64_t steam_lobby_id)
         {
             continue; // we don't need to connect to ourselves
         }
+        addConnection(peer);
     }
 }
 
@@ -242,6 +244,12 @@ void WbiSteamPeer::OnSteamLobbyChatUpdate(LobbyChatUpdate_t* update)
     {
         removeConnection(CSteamID(update->m_ulSteamIDUserChanged));
     }
+}
+
+void WbiSteamPeer::OnSteamLobbyEnter(LobbyEnter_t* enter)
+{
+    ERR_FAIL_COND_MSG(enter->m_EChatRoomEnterResponse != k_EChatRoomEnterResponseSuccess, "Failed to enter lobby"); // todo log the lobby id
+    // init(enter->m_ulSteamIDLobby)
 }
 
 // Called when the multiplayer peer should be immediately closed (see MultiplayerPeer.close()).

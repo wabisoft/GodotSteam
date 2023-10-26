@@ -74,7 +74,7 @@ namespace godot {
 
         CSteamID peer_ = {};
         SteamNetworkingIdentity networkId_ = {};
-        MultiplayerPeer::ConnectionStatus connectionStatus_;
+        MultiplayerPeer::ConnectionStatus connectionStatus_ = MultiplayerPeer::ConnectionStatus::CONNECTION_DISCONNECTED;
     };
 
 
@@ -111,6 +111,7 @@ namespace godot {
         STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionRequest, SteamNetworkingMessagesSessionRequest_t);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionFailed, SteamNetworkingMessagesSessionFailed_t);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamLobbyChatUpdate, LobbyChatUpdate_t);
+        STEAM_CALLBACK(WbiSteamPeer, OnSteamLobbyEnter, LobbyEnter_t);
 
         
         // MultiplayerPeerExtension Overrides
