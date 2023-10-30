@@ -88,6 +88,7 @@ namespace godot {
         SteamPacket&& WbiSteamPeer::popPacket();
         SteamPeerConnection* findConnection(CSteamID peer);
         CSteamID godotToSteam(int32_t p_peer);
+        int32_t steamToGodot(CSteamID p_peer);
 
     protected:
         static void _bind_methods();
@@ -116,6 +117,7 @@ namespace godot {
         
         // MultiplayerPeerExtension Overrides
         void _close() override;
+        void _disconnect_peer_internal(CSteamID p_peer, bool p_force); // internal overload
         void _disconnect_peer(int32_t p_peer, bool p_force) override;
         int32_t _get_available_packet_count() const override;
         MultiplayerPeer::ConnectionStatus _get_connection_status() const override;

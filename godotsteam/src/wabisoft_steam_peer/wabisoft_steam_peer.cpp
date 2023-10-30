@@ -101,7 +101,10 @@ void SteamPeerConnection::init(CSteamID userSteamId)
 
 void SteamPeerConnection::close()
 {
-    SteamNetworkingMessages()->CloseSessionWithUser(networkId_);
+    if(getStatus() == ConnectionStatus::CONNECTION_CONNECTED)
+    {
+        SteamNetworkingMessages()->CloseSessionWithUser(networkId_);
+    }
 }
 
 void SteamPeerConnection::onPeerConnectionRequest(const SteamNetworkingIdentity& peerNetworkIdentity)
@@ -129,7 +132,7 @@ void WbiSteamPeer::addConnection(CSteamID peer)
 
 void WbiSteamPeer::removeConnection(CSteamID peer)
 {
-    _disconnect_peer(peer.ConvertToUint64(), false);
+    _disconnect_peer_internal(peer, false); 
     godotToSteamIds_.erase(peer);
     peerConnections_.erase(peer.ConvertToUint64());
 }
@@ -190,6 +193,12 @@ CSteamID WbiSteamPeer::godotToSteam(int32_t p_peer)
 {
     ERR_FAIL_COND_V_MSG(p_peer > godotToSteamIds_.size(), {}, "Got godot peer id for peer that is outside the current bounds");
     return godotToSteamIds_[p_peer];
+}
+
+int32_t WbiSteamPeer::steamToGodot(CSteamID p_peer)
+{
+    ERR_FAIL_COND_V_MSG(p_peer.IsValid(), -1, "Got invalid steamId when converting to godot id");
+    return godotToSteamIds_.find(p_peer);
 }
 
 void WbiSteamPeer::OnSteamNetworkingMessagesSessionRequest(SteamNetworkingMessagesSessionRequest_t* request)
@@ -263,13 +272,11 @@ void WbiSteamPeer::_close()
     }
 }
 
-// Called when the multiplayer peer should be immediately closed (see MultiplayerPeer.close()).
-// Disconnects the given peer from this host. If force is true the peer_disconnected signal will not be emitted for this peer.
-void WbiSteamPeer::_disconnect_peer(int32_t p_peer, bool p_force)
+void WbiSteamPeer::_disconnect_peer_internal(CSteamID p_peer, bool p_force)
 {
-    auto peer = godotToSteam(p_peer);
-    ERR_FAIL_COND(peer.IsValid());
-    auto connection = findConnection(peer);
+    ERR_FAIL_COND_MSG(!p_peer.IsValid(), "Got invalid peer id internally in _disconnect_peer_internal");
+    auto connection = findConnection(p_peer);
+    ERR_FAIL_COND_MSG(!connection, "Could not find connection for peer");
     connection->close();
     if(!p_force)
     {
@@ -279,6 +286,14 @@ void WbiSteamPeer::_disconnect_peer(int32_t p_peer, bool p_force)
     {
         connection->setStatus(ConnectionStatus::CONNECTION_DISCONNECTED);
     }
+}
+// Called when the multiplayer peer should be immediately closed (see MultiplayerPeer.close()).
+// Disconnects the given peer from this host. If force is true the peer_disconnected signal will not be emitted for this peer.
+void WbiSteamPeer::_disconnect_peer(int32_t p_peer, bool p_force)
+{
+    auto peer = godotToSteam(p_peer);
+    ERR_FAIL_COND_MSG(!peer.IsValid(), "Got invalid peer id from godot in _disconnect_peer");
+    _disconnect_peer_internal(peer, p_force);
 }
 
 // Called when the available packet count is internally requested by the MultiplayerAPI. 
