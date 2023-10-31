@@ -4,8 +4,15 @@
 #include <godot_cpp/classes/wrapped.hpp>
 #include <godot_cpp/templates/vector.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
+#include <functional>
 
 #include "../godotsteam.h"
+
+template <typename T>
+using asyncCallback = std::function<T>;
+
+template <typename T>
+using syncCallback = std::function<T>&;
 
 namespace godot {
 
@@ -49,6 +56,7 @@ namespace godot {
 
     };
 
+    using ConnectionStatusAsyncCallback = asyncCallback<void(MultiplayerPeer::ConnectionStatus oldStatus, MultiplayerPeer::ConnectionStatus newStatus)>;
 
     class SteamPeerConnection
     {
@@ -71,12 +79,18 @@ namespace godot {
         void init(CSteamID userSteamId);
         void close();
         void onPeerConnectionRequest(const SteamNetworkingIdentity& peerNetworkIdentity);
+        void onPacket(const SteamPacket& packet);
         void setStatus(MultiplayerPeer::ConnectionStatus);
+        void setStatusChangeCallback(ConnectionStatusAsyncCallback callback) { onConnectionStatusChange_ = std::move(callback); }
     private:
+        void updateStatus(MultiplayerPeer::ConnectionStatus);
 
         CSteamID peer_ = {};
         SteamNetworkingIdentity networkId_ = {};
         MultiplayerPeer::ConnectionStatus connectionStatus_ = MultiplayerPeer::ConnectionStatus::CONNECTION_DISCONNECTED;
+        uint64_t lastMessageTimeMS_ = 0;
+        ConnectionStatusAsyncCallback onConnectionStatusChange_;
+
     };
 
 
@@ -103,15 +117,15 @@ namespace godot {
         void init(uint64_t steam_lobby_id);
         ConnectionStatus getConnectionStatus(uint64_t peer);
 
-        void setConnectionStatus(SteamPeerConnection* connection, ConnectionStatus status);
         void receiveMessageOnChannel(SteamNetworkingMessage_t* message, TransferChannel channel);
 
         void addConnection(CSteamID peer);
         void removeConnection(CSteamID peer);
+        void onConnectionStatusChange(CSteamID peer, ConnectionStatus oldStatus, ConnectionStatus newStatus);
 
 
         // Steam callbacks 
-        STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionRequest, SteamNetworkingMessagesSessionRequest_t, callbackSteamNetworkingMessagesSessionRequest);
+        STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionRequest, SteamNetworkingMessagesSessionRequest_t);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionFailed, SteamNetworkingMessagesSessionFailed_t);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamLobbyChatUpdate, LobbyChatUpdate_t);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamLobbyEnter, LobbyEnter_t);
@@ -145,7 +159,6 @@ namespace godot {
 
     private:
         godot::Vector<SteamPacket> incoming_packets_;
-        godot::Vector<SteamPacket> outgoing_packets_;
         godot::HashMap<uint64_t, SteamPeerConnection> peerConnections_; // CSteamID -> SteamPeerConnection
         godot::Vector<CSteamID> godotToSteamIds_; // godot unique network id -> CSteamID 
         SteamPacket currentReceivingPacket_; // godot just wants pointers so we'll hold a reference untill they ask again
