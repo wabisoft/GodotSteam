@@ -63,6 +63,8 @@ namespace godot {
             networkId_.SetSteamID(peer_);
         }
 
+        void _poll();
+
         CSteamID getPeer() const { return peer_; }
         MultiplayerPeer::ConnectionStatus getStatus() const { return connectionStatus_; }
 

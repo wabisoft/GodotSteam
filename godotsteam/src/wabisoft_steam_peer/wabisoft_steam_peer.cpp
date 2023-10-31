@@ -4,6 +4,7 @@
 #include "../utils/utils.hpp"
 
 #include <iterator>
+#include <iostream>
 
 using namespace godot;
 
@@ -83,6 +84,14 @@ void SteamPeerConnection::setStatus(MultiplayerPeer::ConnectionStatus status)
     connectionStatus_ = status;
 }
 
+void SteamPeerConnection::_poll()
+{
+    SteamNetConnectionInfo_t info;
+    SteamNetConnectionRealTimeStatus_t status;
+    SteamNetworkingMessages()->GetSessionConnectionInfo(networkId_, &info, &status);
+    std::cout << "blah!" << std::endl;
+}
+
 void SteamPeerConnection::init(CSteamID userSteamId)
 {
     ERR_FAIL_COND(!userSteamId.IsValid());
@@ -111,6 +120,7 @@ void SteamPeerConnection::onPeerConnectionRequest(const SteamNetworkingIdentity&
 void WbiSteamPeer::_bind_methods()
 {
     ClassDB::bind_method(D_METHOD("init", "steam_lobby_id"), &WbiSteamPeer::init);
+    ClassDB::bind_method(D_METHOD("poll"), &WbiSteamPeer::_poll);
 }
 
 WbiSteamPeer::WbiSteamPeer()
@@ -477,6 +487,10 @@ void WbiSteamPeer::_poll()
                 message->Release(); // release the message
             }
         }
+    }
+    for(auto& connectionPair : peerConnections_)
+    {
+        connectionPair.value._poll();
     }
 }
 
