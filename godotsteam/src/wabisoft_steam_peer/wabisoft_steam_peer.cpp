@@ -101,10 +101,7 @@ void SteamPeerConnection::init(CSteamID userSteamId)
 
 void SteamPeerConnection::close()
 {
-    if(getStatus() == ConnectionStatus::CONNECTION_CONNECTED)
-    {
-        SteamNetworkingMessages()->CloseSessionWithUser(networkId_);
-    }
+    SteamNetworkingMessages()->CloseSessionWithUser(networkId_);
 }
 
 void SteamPeerConnection::onPeerConnectionRequest(const SteamNetworkingIdentity& peerNetworkIdentity)
@@ -277,6 +274,10 @@ void WbiSteamPeer::_disconnect_peer_internal(CSteamID p_peer, bool p_force)
     ERR_FAIL_COND_MSG(!p_peer.IsValid(), "Got invalid peer id internally in _disconnect_peer_internal");
     auto connection = findConnection(p_peer);
     ERR_FAIL_COND_MSG(!connection, "Could not find connection for peer");
+    if(connection->getStatus() == ConnectionStatus::CONNECTION_DISCONNECTED)
+    {
+        return;  // nothing to do for already disconnected connection
+    }
     connection->close();
     if(!p_force)
     {
