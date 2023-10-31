@@ -88,8 +88,7 @@ void SteamPeerConnection::_poll()
 {
     SteamNetConnectionInfo_t info;
     SteamNetConnectionRealTimeStatus_t status;
-    SteamNetworkingMessages()->GetSessionConnectionInfo(networkId_, &info, &status);
-    std::cout << "blah!" << std::endl;
+    // SteamNetworkingMessages()->GetSessionConnectionInfo(networkId_, &info, &status);
 }
 
 void SteamPeerConnection::init(CSteamID userSteamId)
@@ -97,13 +96,13 @@ void SteamPeerConnection::init(CSteamID userSteamId)
     ERR_FAIL_COND(!userSteamId.IsValid());
     // TODO: (owen) add timeouts
     setStatus(ConnectionStatus::CONNECTION_CONNECTING);
+    if(!ping(peer_))
+    {
+        setStatus(ConnectionStatus::CONNECTION_DISCONNECTED); // we don't emit signal here because 1 we can't in this class and 2 the peer was never connected
+        ERR_FAIL_MSG(String("Failed to send packet to peer {0}. Connection failed").format(peer_.ConvertToUint64())); // TODO: (owen): should we add some retry logic?
+    }
     if(userSteamId < peer_) // if we are the lesser steam id then we initiate the connection with a ping
     {
-        if(!ping(peer_))
-        {
-            setStatus(ConnectionStatus::CONNECTION_DISCONNECTED); // we don't emit signal here because 1 we can't in this class and 2 the peer was never connected
-            ERR_FAIL_MSG(String("Failed to send packet to peer {0}. Connection failed").format(peer_.ConvertToUint64())); // TODO: (owen): should we add some retry logic?
-        }
     }
 }
 

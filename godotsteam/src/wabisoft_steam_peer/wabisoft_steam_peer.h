@@ -111,7 +111,7 @@ namespace godot {
 
 
         // Steam callbacks 
-        STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionRequest, SteamNetworkingMessagesSessionRequest_t);
+        STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionRequest, SteamNetworkingMessagesSessionRequest_t, callbackSteamNetworkingMessagesSessionRequest);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamNetworkingMessagesSessionFailed, SteamNetworkingMessagesSessionFailed_t);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamLobbyChatUpdate, LobbyChatUpdate_t);
         STEAM_CALLBACK(WbiSteamPeer, OnSteamLobbyEnter, LobbyEnter_t);
