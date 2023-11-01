@@ -481,7 +481,7 @@ void WbiSteamPeer::_poll()
             {
                 SteamNetworkingMessage_t* message = messageBuffer[i];
                 ERR_CONTINUE_MSG(message == nullptr, "Steam returned a nullptr within the messageBuffer");
-                ERR_CONTINUE_MSG(message->m_cbSize <= MAX_STEAM_PACKET_SIZE, String("Received steam networking message that exceeds the size limit of {0}").format(MAX_STEAM_PACKET_SIZE));
+                ERR_CONTINUE_MSG(message->m_cbSize >= MAX_STEAM_PACKET_SIZE, String("Received steam networking message that exceeds the size limit of {0}").format(MAX_STEAM_PACKET_SIZE));
                 receiveMessageOnChannel(message, channel);
                 message->Release(); // release the message
             }
