@@ -15,7 +15,7 @@ constexpr const char k_Pong[] = "pong";
 static_assert(std::size(k_Ping) == std::size(k_Pong));
 constexpr const size_t k_InitMessageLength = std::size(k_Ping);
 constexpr const uint8_t k_MaxChannelMessagesPerFrame = 255;
-constexpr const uint32_t k_ConnectionIdlePingIntervalMS = 5000; // 30 seconds
+constexpr const uint32_t k_ConnectionIdlePingIntervalMS = 30000; // 30 seconds
 using ConnectionStatus = MultiplayerPeer::ConnectionStatus;
 
 namespace impl = wabisoft::steam;
@@ -176,6 +176,7 @@ void impl::Connection::onPeerConnectionRequest(const SteamNetworkingIdentity& pe
 
 void impl::Connection::onPacket(const impl::Packet& packet)
 {
+    log_packet(PacketDirection::Recv, packet);
     if(packet.get_channel() == impl::TransferChannel::Init)
     {
         // For now we only expect to receive pings and pongs here
