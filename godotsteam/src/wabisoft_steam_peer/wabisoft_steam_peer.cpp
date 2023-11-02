@@ -1,11 +1,12 @@
 #include "wabisoft_steam_peer.h"
 
-#include <godot_cpp/classes/time.hpp>
 #include "steam/steam_api.h"
 #include "../utils/utils.hpp"
+#include "../utils/log.hpp"
 
 #include <iterator>
-#include <iostream>
+#include <sstream>
+#include <optional>
 
 using namespace godot;
 
@@ -14,28 +15,33 @@ constexpr const char k_Pong[] = "pong";
 static_assert(std::size(k_Ping) == std::size(k_Pong));
 constexpr const size_t k_InitMessageLength = std::size(k_Ping);
 constexpr const uint8_t k_MaxChannelMessagesPerFrame = 255;
+constexpr const uint32_t k_ConnectionIdlePingIntervalMS = 5000; // 30 seconds
 using ConnectionStatus = MultiplayerPeer::ConnectionStatus;
+
+namespace impl = wabisoft::steam;
+
 
 namespace
 {
-    EResult send_packet(const SteamPacket& packet)
+    
+    enum class PacketDirection
     {
-        ERR_FAIL_COND_V_MSG(SteamNetworkingMessages() == nullptr, k_EResultFail, "Steam network messages not initialized cannot send packets");
-        return SteamNetworkingMessages()->SendMessageToUser(packet.get_network_identity(), packet.data(), packet.size(), packet.get_mode(), static_cast<int>(packet.get_channel()));
-    }
-
-    bool ping(const CSteamID peer)
+        Send = 0,
+        Recv = 1
+    };
+    void log_packet(PacketDirection dir, const impl::Packet& packet)
     {
-        SteamPacket packet((uint8_t*)k_Ping, std::size(k_Ping), {peer, TransferChannel::Init});
-        auto result = send_packet(packet);
-        return result != k_EResultFail;
-    }
-
-    bool pong(const CSteamID peer)
-    {
-        SteamPacket packet((uint8_t*)k_Ping, std::size(k_Pong), {peer, TransferChannel::Init});
-        auto result = send_packet(packet);
-        return result != k_EResultFail;
+        constexpr const char* dirStr[2] =  {
+            "SEND", "RECV"
+        };
+#ifndef _NDEBUG
+        std::stringstream ss;
+        ss << "[" << 
+            dirStr[static_cast<size_t>(dir)] << "]"
+            << "(" << packet.get_peer().ConvertToUint64() << ")"
+            << ": " << std::string((char*)packet.data(), packet.size()) << std::endl; 
+        log(DEBUG, ss.str());
+#endif
     }
 
     constexpr std::pair<ConnectionStatus, ConnectionStatus> connectionFSM[] = {
@@ -65,8 +71,7 @@ namespace
     }
 }
 
-
-SteamPacket::SteamPacket(const uint8_t* in, int32_t size, const TransferInfo& info)
+impl::Packet::Packet(const uint8_t* in, int32_t size, const impl::TransferInfo& info)
     : size_(size), info_(info)
 {
     ERR_FAIL_INDEX_MSG(size, max_size(), "Buffer being copied from is too large for one packet");
@@ -75,7 +80,7 @@ SteamPacket::SteamPacket(const uint8_t* in, int32_t size, const TransferInfo& in
 }
 
 
-void SteamPeerConnection::updateStatus(MultiplayerPeer::ConnectionStatus status)
+void impl::Connection::updateStatus(MultiplayerPeer::ConnectionStatus status)
 {
     if(connectionStatus_ != status)
     {
@@ -83,7 +88,7 @@ void SteamPeerConnection::updateStatus(MultiplayerPeer::ConnectionStatus status)
     }
 }
 
-void SteamPeerConnection::setStatus(MultiplayerPeer::ConnectionStatus status)
+void impl::Connection::setStatus(MultiplayerPeer::ConnectionStatus status)
 {
     auto it = std::find_if(std::begin(connectionFSM), std::end(connectionFSM),
     [&](const auto& pair)
@@ -96,32 +101,67 @@ void SteamPeerConnection::setStatus(MultiplayerPeer::ConnectionStatus status)
     onConnectionStatusChange_(old, connectionStatus_);
 }
 
-void SteamPeerConnection::_poll()
+void impl::Connection::_poll()
 {
     SteamNetConnectionInfo_t info;
     SteamNetConnectionRealTimeStatus_t status;
     // SteamNetworkingMessages()->GetSessionConnectionInfo(networkId_, &info, &status);
-}
-
-void SteamPeerConnection::init(CSteamID userSteamId)
-{
-    ERR_FAIL_COND(!userSteamId.IsValid());
-    // TODO: (owen) add timeouts
-    setStatus(ConnectionStatus::CONNECTION_CONNECTING);
-    if(!ping(peer_))
+    if(connectionStatus_ == ConnectionStatus::CONNECTION_CONNECTED)
     {
-        setStatus(ConnectionStatus::CONNECTION_DISCONNECTED); // we don't emit signal here because 1 we can't in this class and 2 the peer was never connected
-        ERR_FAIL_MSG(String("Failed to send packet to peer {0}. Connection failed").format(peer_.ConvertToUint64())); // TODO: (owen): should we add some retry logic?
+        auto now = wabisoft::utils::getTicksMS();
+        if(now - lastMessageTimeMS_ >= k_ConnectionIdlePingIntervalMS)
+        {
+            ping();
+        }
     }
 }
 
+EResult impl::Connection::send_packet(const impl::Packet& packet)
+{
+    ERR_FAIL_COND_V_MSG(SteamNetworkingMessages() == nullptr, k_EResultFail, "Steam network messages not initialized cannot send packets");
+    auto res = SteamNetworkingMessages()->SendMessageToUser(packet.get_network_identity(), packet.data(), packet.size(), packet.get_mode(), static_cast<int>(packet.get_channel()));
+    ERR_FAIL_COND_V_MSG(res == k_EResultFail, res, String("Failed to send packet to peer {0}.").format(packet.get_peer().ConvertToUint64()));
+    log_packet(PacketDirection::Send, packet);
+    lastMessageTimeMS_ = wabisoft::utils::getTicksMS();
+    return res;
+}
 
-void SteamPeerConnection::close()
+bool impl::Connection::ping()
+{
+    impl::Packet packet((uint8_t*)k_Ping, std::size(k_Ping), {peer_, impl::TransferChannel::Init});
+    auto success = send_packet(packet) != k_EResultFail;
+    if(!success)
+    {
+        setStatus(ConnectionStatus::CONNECTION_DISCONNECTED);
+    }
+    return success;
+}
+
+bool impl::Connection::pong()
+{
+    impl::Packet packet((uint8_t*)k_Pong, std::size(k_Pong), {peer_, impl::TransferChannel::Init});
+    auto success = send_packet(packet) != k_EResultFail;
+    if(!success)
+    {
+        setStatus(ConnectionStatus::CONNECTION_DISCONNECTED);
+    }
+    return success;
+}
+
+void impl::Connection::init(CSteamID userSteamId)
+{
+    ERR_FAIL_COND(!userSteamId.IsValid());
+    setStatus(ConnectionStatus::CONNECTION_CONNECTING);
+    ping();
+}
+
+
+void impl::Connection::close()
 {
     SteamNetworkingMessages()->CloseSessionWithUser(networkId_);
 }
 
-void SteamPeerConnection::onPeerConnectionRequest(const SteamNetworkingIdentity& peerNetworkIdentity)
+void impl::Connection::onPeerConnectionRequest(const SteamNetworkingIdentity& peerNetworkIdentity)
 {
     // return connectionPtr->onPeerInitiate(request->m_identityRemote);
     ERR_FAIL_COND_MSG(peerNetworkIdentity.GetSteamID() != networkId_.GetSteamID(), "Got peer connection request for peer that is not the one we manage");
@@ -134,74 +174,74 @@ void SteamPeerConnection::onPeerConnectionRequest(const SteamNetworkingIdentity&
     return;
 }
 
-void SteamPeerConnection::onPacket(const SteamPacket& packet)
+void impl::Connection::onPacket(const impl::Packet& packet)
 {
-    if(packet.get_channel() == TransferChannel::Init)
+    if(packet.get_channel() == impl::TransferChannel::Init)
     {
         // For now we only expect to receive pings and pongs here
         ERR_FAIL_COND_MSG(packet.size() != k_InitMessageLength, String("ping messages may only be one of \"{0}\" or \"{1}\"").format(k_Ping, k_Pong));
         if(strcmp((const char*)packet.data(), k_Ping) == 0)
         {
-            SteamPacket packet((uint8_t*)k_Pong, std::size(k_Ping), {peer_, TransferChannel::Init});
-            auto result = send_packet(packet);
-            if(result == k_EResultFail)
-            {
-                setStatus(ConnectionStatus::CONNECTION_DISCONNECTED);
-                ERR_FAIL_MSG(String("Failed to send packet to peer {0}. Connection failed").format(peer_.ConvertToUint64()));
-            }
+            pong();
         }
     }
     updateStatus(ConnectionStatus::CONNECTION_CONNECTED);
-    lastMessageTimeMS_ = godot::Time::get_singleton()->get_ticks_msec();
+    lastMessageTimeMS_ = wabisoft::utils::getTicksMS();
 }
 
-void WbiSteamPeer::_bind_methods()
+void impl::WbiSteamPeerManager::_bind_methods()
 {
-    ClassDB::bind_method(D_METHOD("init", "steam_lobby_id"), &WbiSteamPeer::init);
-    ClassDB::bind_method(D_METHOD("poll"), &WbiSteamPeer::_poll);
+    ClassDB::bind_method(D_METHOD("init", "steam_lobby_id"), &impl::WbiSteamPeerManager::init);
+    ClassDB::bind_method(D_METHOD("poll"), &impl::WbiSteamPeerManager::_poll);
+    ClassDB::bind_method(D_METHOD("getConnectionStatus", "peer_steam_id"), &impl::WbiSteamPeerManager::getConnectionStatus);
+    ClassDB::bind_method(D_METHOD("godotToSteam", "peer_local_id"), &impl::WbiSteamPeerManager::godotToSteamExternal);
+    ClassDB::bind_method(D_METHOD("steamToGodot", "peer_steam_id"), &impl::WbiSteamPeerManager::steamToGodotExternal);
 }
 
-WbiSteamPeer::WbiSteamPeer()
+impl::WbiSteamPeerManager::WbiSteamPeerManager()
 { }
 
 
-void WbiSteamPeer::addConnection(CSteamID peer)
+void impl::WbiSteamPeerManager::addConnection(CSteamID peer)
 {
     ERR_FAIL_COND_MSG(peerConnections_.has(peer.ConvertToUint64()), "Connection already exists");
-    godotToSteamIds_.push_back(peer);
-    SteamPeerConnection& conn = peerConnections_[peer.ConvertToUint64()] = SteamPeerConnection(peer);
-    conn.setStatusChangeCallback([this, peer](auto oldStatus, auto newStatus) // TODO: (owen) - capturing this is a little unsafe, but the connection lives on this so it's also kinda ok
+    auto idx = godotToSteamIds_.find(peer);
+    if(idx == -1)
+    {
+        godotToSteamIds_.ordered_insert(peer);
+    }
+    impl::Connection& conn = peerConnections_[peer.ConvertToUint64()] = impl::Connection(peer);
+    // TODO: (owen) - capturing this is a little unsafe, but the connection lives on this so it's also kinda ok
+    conn.setStatusChangeCallback([this, peer](auto oldStatus, auto newStatus) 
     {
         onConnectionStatusChange(peer, oldStatus, newStatus);
     });
     conn.init(userSteamId_);
-    // FIXME: (owen) this very naive and makes the peer with the smallest steam id will just be the host 
-    godotToSteamIds_.sort(); // we make sure every peer has the same order so the conversion is consistent across clients
 }
 
-void WbiSteamPeer::removeConnection(CSteamID peer)
+void impl::WbiSteamPeerManager::removeConnection(CSteamID peer)
 {
     _disconnect_peer_internal(peer, false); 
     godotToSteamIds_.erase(peer);
     peerConnections_.erase(peer.ConvertToUint64());
 }
 
-void WbiSteamPeer::onConnectionStatusChange(CSteamID peer, ConnectionStatus oldStatus, ConnectionStatus newStatus)
+void impl::WbiSteamPeerManager::onConnectionStatusChange(CSteamID peer, ConnectionStatus oldStatus, ConnectionStatus newStatus)
 {
     auto connection = findConnection(peer);
     ERR_FAIL_COND_MSG(!connection, "Got connection status change for unknown connection");
     if(newStatus == ConnectionStatus::CONNECTION_CONNECTED) // if we change to connected we always emit
     {
-        emit_signal("peer_connected", peer.ConvertToUint64());
+        emit_signal("peer_connected", steamToGodot(peer.ConvertToUint64()));
     }
-    if(oldStatus == ConnectionStatus::CONNECTION_DISCONNECTED && oldStatus == ConnectionStatus::CONNECTION_CONNECTED) // only emit disconnected if the peer was previously connected
+    if(newStatus == ConnectionStatus::CONNECTION_DISCONNECTED && oldStatus == ConnectionStatus::CONNECTION_CONNECTED) // only emit disconnected if the peer was previously connected
     {
-        emit_signal("peer_disconnected", peer.ConvertToUint64());
+        emit_signal("peer_disconnected", steamToGodot(peer.ConvertToUint64()));
     }
 
 }
 
-ConnectionStatus WbiSteamPeer::getConnectionStatus(uint64_t peer)
+ConnectionStatus impl::WbiSteamPeerManager::getConnectionStatus(uint64_t peer)
 {
     auto connection = findConnection(peer);
     if(connection)
@@ -211,13 +251,13 @@ ConnectionStatus WbiSteamPeer::getConnectionStatus(uint64_t peer)
     return ConnectionStatus::CONNECTION_DISCONNECTED;
 }
 
-void WbiSteamPeer::init(uint64_t steam_lobby_id)
+void impl::WbiSteamPeerManager::init(uint64_t steam_lobby_id)
 {
-    *this = WbiSteamPeer(); // FIXME: this feels dirty
-    ERR_FAIL_COND_MSG(SteamUser() == nullptr, "Steam is not initialized. Cannot create instance of WbiSteamPeer");
+    *this = impl::WbiSteamPeerManager(); // FIXME: this feels dirty
+    ERR_FAIL_COND_MSG(SteamUser() == nullptr, "Steam is not initialized. Cannot create instance of impl::PeerManager");
     userSteamId_ = SteamUser()->GetSteamID();
     lobbyId_ = steam_lobby_id;
-    ERR_FAIL_COND_MSG(SteamMatchmaking() == nullptr, "Steam matchmaking not initialized. Cannot create instance of WbiSteamPeer");
+    ERR_FAIL_COND_MSG(SteamMatchmaking() == nullptr, "Steam matchmaking not initialized. Cannot create instance of impl::PeerManager");
     ERR_FAIL_COND(!userSteamId_.IsValid());
     int lobbyCount = SteamMatchmaking()->GetNumLobbyMembers(lobbyId_);
     for(int i = 0; i < lobbyCount; ++i)
@@ -231,19 +271,19 @@ void WbiSteamPeer::init(uint64_t steam_lobby_id)
     }
 }
 
-const SteamPacket& WbiSteamPeer::peakPacket() const
+const impl::Packet& impl::WbiSteamPeerManager::peakPacket() const
 {
     return *incoming_packets_.begin();
 };
 
-SteamPacket&& WbiSteamPeer::popPacket()
+impl::Packet&& impl::WbiSteamPeerManager::popPacket()
 {
     auto packet = std::move(*incoming_packets_.begin());
     incoming_packets_.remove_at(0);
     return std::move(packet);
 };
 
-SteamPeerConnection* WbiSteamPeer::findConnection(CSteamID peer)
+impl::Connection* impl::WbiSteamPeerManager::findConnection(CSteamID peer)
 {
     auto it = peerConnections_.find(peer.ConvertToUint64());
     if(it == peerConnections_.end())
@@ -253,19 +293,29 @@ SteamPeerConnection* WbiSteamPeer::findConnection(CSteamID peer)
     return &(it->value);
 }
 
-CSteamID WbiSteamPeer::godotToSteam(int32_t p_peer)
+CSteamID impl::WbiSteamPeerManager::godotToSteam(int32_t p_peer)
 {
     ERR_FAIL_COND_V_MSG(p_peer > godotToSteamIds_.size(), {}, "Got godot peer id for peer that is outside the current bounds");
     return godotToSteamIds_[p_peer];
 }
 
-int32_t WbiSteamPeer::steamToGodot(CSteamID p_peer)
+uint64_t impl::WbiSteamPeerManager::godotToSteamExternal(int32_t p_peer)
 {
-    ERR_FAIL_COND_V_MSG(p_peer.IsValid(), -1, "Got invalid steamId when converting to godot id");
+    return godotToSteam(p_peer).ConvertToUint64();
+}
+
+int32_t impl::WbiSteamPeerManager::steamToGodot(CSteamID p_peer)
+{
+    ERR_FAIL_COND_V_MSG(!p_peer.IsValid(), -1, "Got invalid steamId when converting to godot id");
     return godotToSteamIds_.find(p_peer);
 }
 
-void WbiSteamPeer::OnSteamNetworkingMessagesSessionRequest(SteamNetworkingMessagesSessionRequest_t* request)
+int32_t impl::WbiSteamPeerManager::steamToGodotExternal(uint64_t p_peer)
+{
+    return steamToGodot(CSteamID(p_peer));
+}
+
+void impl::WbiSteamPeerManager::OnSteamNetworkingMessagesSessionRequest(SteamNetworkingMessagesSessionRequest_t* request)
 {
     auto peer = request->m_identityRemote.GetSteamID();
     auto connection = findConnection(peer);
@@ -276,7 +326,7 @@ void WbiSteamPeer::OnSteamNetworkingMessagesSessionRequest(SteamNetworkingMessag
     // else just ignore it? TODO: (is there a way to explicitly decline it so the user isn't waiting around forever?)
 }
 
-void WbiSteamPeer::OnSteamNetworkingMessagesSessionFailed(SteamNetworkingMessagesSessionFailed_t* failure)
+void impl::WbiSteamPeerManager::OnSteamNetworkingMessagesSessionFailed(SteamNetworkingMessagesSessionFailed_t* failure)
 {
     // TODO: (owen) close the connection?
     auto peer = failure->m_info.m_identityRemote.GetSteamID();
@@ -292,7 +342,7 @@ void WbiSteamPeer::OnSteamNetworkingMessagesSessionFailed(SteamNetworkingMessage
 	k_EChatMemberStateChangeBanned			= 0x0010,		// User kicked and banned
 */
 
-void WbiSteamPeer::OnSteamLobbyChatUpdate(LobbyChatUpdate_t* update)
+void impl::WbiSteamPeerManager::OnSteamLobbyChatUpdate(LobbyChatUpdate_t* update)
 {
 
     if(update->m_ulSteamIDLobby != lobbyId_.ConvertToUint64())
@@ -311,7 +361,7 @@ void WbiSteamPeer::OnSteamLobbyChatUpdate(LobbyChatUpdate_t* update)
     }
 }
 
-void WbiSteamPeer::OnSteamLobbyEnter(LobbyEnter_t* enter)
+void impl::WbiSteamPeerManager::OnSteamLobbyEnter(LobbyEnter_t* enter)
 {
     ERR_FAIL_COND_MSG(enter->m_EChatRoomEnterResponse != k_EChatRoomEnterResponseSuccess, "Failed to enter lobby"); // todo log the lobby id
     // init(enter->m_ulSteamIDLobby)
@@ -319,7 +369,7 @@ void WbiSteamPeer::OnSteamLobbyEnter(LobbyEnter_t* enter)
 
 // Called when the multiplayer peer should be immediately closed (see MultiplayerPeer.close()).
 // Immediately close the multiplayer peer returning to the state CONNECTION_DISCONNECTED. Connected peers will be dropped without emitting peer_disconnected.
-void WbiSteamPeer::_close()
+void impl::WbiSteamPeerManager::_close()
 {
     for(auto& pair : peerConnections_)
     {
@@ -328,7 +378,7 @@ void WbiSteamPeer::_close()
     }
 }
 
-void WbiSteamPeer::_disconnect_peer_internal(CSteamID p_peer, bool p_force)
+void impl::WbiSteamPeerManager::_disconnect_peer_internal(CSteamID p_peer, bool p_force)
 {
     (void)p_force;
     ERR_FAIL_COND_MSG(!p_peer.IsValid(), "Got invalid peer id internally in _disconnect_peer_internal");
@@ -344,7 +394,7 @@ void WbiSteamPeer::_disconnect_peer_internal(CSteamID p_peer, bool p_force)
 
 // Called when the multiplayer peer should be immediately closed (see MultiplayerPeer.close()).
 // Disconnects the given peer from this host. If force is true the peer_disconnected signal will not be emitted for this peer.
-void WbiSteamPeer::_disconnect_peer(int32_t p_peer, bool p_force)
+void impl::WbiSteamPeerManager::_disconnect_peer(int32_t p_peer, bool p_force)
 {
     auto peer = godotToSteam(p_peer);
     ERR_FAIL_COND_MSG(!peer.IsValid(), "Got invalid peer id from godot in _disconnect_peer");
@@ -352,13 +402,13 @@ void WbiSteamPeer::_disconnect_peer(int32_t p_peer, bool p_force)
 }
 
 // Called when the available packet count is internally requested by the MultiplayerAPI. 
-int32_t WbiSteamPeer::_get_available_packet_count() const
+int32_t impl::WbiSteamPeerManager::_get_available_packet_count() const
 {
     return incoming_packets_.size();
 }
 
 // Called when the connection status is requested on the MultiplayerPeer (see MultiplayerPeer.get_connection_status()).
-MultiplayerPeer::ConnectionStatus WbiSteamPeer::_get_connection_status() const
+MultiplayerPeer::ConnectionStatus impl::WbiSteamPeerManager::_get_connection_status() const
 {
 
     // Returns the current state of the connection. See ConnectionStatus.
@@ -391,13 +441,13 @@ MultiplayerPeer::ConnectionStatus WbiSteamPeer::_get_connection_status() const
 }
 
 // Called when the maximum allowed packet size (in bytes) is requested by the MultiplayerAPI.
-int32_t WbiSteamPeer::_get_max_packet_size() const
+int32_t impl::WbiSteamPeerManager::_get_max_packet_size() const
 {
-    return SteamPacket::max_size();
+    return impl::Packet::max_size();
 }
 
 // Called when a packet needs to be received by the MultiplayerAPI, with r_buffer_size being the size of the binary r_buffer in bytes.
-Error WbiSteamPeer::_get_packet(const uint8_t * *r_buffer, int32_t *r_buffer_size)
+Error impl::WbiSteamPeerManager::_get_packet(const uint8_t * *r_buffer, int32_t *r_buffer_size)
 {
     ERR_FAIL_COND_V_MSG(incoming_packets_.size() == 0, ERR_UNAVAILABLE, "No incoming packets available.");
 
@@ -408,31 +458,31 @@ Error WbiSteamPeer::_get_packet(const uint8_t * *r_buffer, int32_t *r_buffer_siz
 }
 
 // Called to get the channel over which the next available packet was received. See MultiplayerPeer.get_packet_channel.
-int32_t WbiSteamPeer::_get_packet_channel() const
+int32_t impl::WbiSteamPeerManager::_get_packet_channel() const
 {
     return static_cast<int32_t>(peakPacket().get_channel());
 }
 
 // Called to get the TransferMode the remote peer used to send the next available packet. See MultiplayerPeer.get_packet_mode.
-MultiplayerPeer::TransferMode WbiSteamPeer::_get_packet_mode() const
+MultiplayerPeer::TransferMode impl::WbiSteamPeerManager::_get_packet_mode() const
 {
     return peakPacket().get_mode();
 }
 
 // Called when the ID of the MultiplayerPeer who sent the most recent packet is requested (see MultiplayerPeer.get_packet_peer).
-int32_t WbiSteamPeer::_get_packet_peer() const
+int32_t impl::WbiSteamPeerManager::_get_packet_peer() const
 {
     return peakPacket().get_peer().ConvertToUint64();
 }
 
 // Called when a packet needs to be received by the MultiplayerAPI, if _get_packet isn't implemented. Use this when extending this class via GDScript.
-PackedByteArray WbiSteamPeer::_get_packet_script()
+PackedByteArray impl::WbiSteamPeerManager::_get_packet_script()
 {
     return {};
 }
 
 // Called when the transfer channel to use is read on this MultiplayerPeer (see MultiplayerPeer.transfer_channel).
-int32_t WbiSteamPeer::_get_transfer_channel() const
+int32_t impl::WbiSteamPeerManager::_get_transfer_channel() const
 {
     /*
     MultiplayerPeer::transfer_channel 
@@ -446,13 +496,13 @@ int32_t WbiSteamPeer::_get_transfer_channel() const
         Refer to the specific network API documentation (e.g. ENet or WebRTC) to learn how to set up channels correctly.
     */
    
-   // TODO: (owen) for now we'll just support a single channel (TransferChannel::Default = 0)
+   // TODO: (owen) for now we'll just support a single channel (impl::TransferChannel::Default = 0)
    return static_cast<int32_t>(target_.channel_);
 
 }
 
 // Called when the transfer mode to use is read on this MultiplayerPeer (see MultiplayerPeer.transfer_mode).
-MultiplayerPeer::TransferMode WbiSteamPeer::_get_transfer_mode() const
+MultiplayerPeer::TransferMode impl::WbiSteamPeerManager::_get_transfer_mode() const
 {
     /*
     Returns the TransferMode the remote peer used to send the next available packet
@@ -479,7 +529,7 @@ MultiplayerPeer::TransferMode WbiSteamPeer::_get_transfer_mode() const
 }
 
 // Called when the unique ID of this MultiplayerPeer is requested (see MultiplayerPeer.get_unique_id). The value must be between 1 and 2147483647.
-int32_t WbiSteamPeer::_get_unique_id() const
+int32_t impl::WbiSteamPeerManager::_get_unique_id() const
 {
 	if(SteamUser() == NULL){
 		return 0;
@@ -489,7 +539,7 @@ int32_t WbiSteamPeer::_get_unique_id() const
 }
 
 // Called when the "refuse new connections" status is requested on this MultiplayerPeer (see MultiplayerPeer.refuse_new_connections).
-bool WbiSteamPeer::_is_refusing_new_connections() const
+bool impl::WbiSteamPeerManager::_is_refusing_new_connections() const
 {
     // TODO: (owen) -- I think we can just have a state machine for the peer. Once it's fully initialized it will refuse new connections
     // it's not totally extensible but it will work for RTSS and that's good enough
@@ -498,25 +548,25 @@ bool WbiSteamPeer::_is_refusing_new_connections() const
 }
 
 // Called when the "is server" status is requested on the MultiplayerAPI. See MultiplayerAPI.is_server.
-bool WbiSteamPeer::_is_server() const
+bool impl::WbiSteamPeerManager::_is_server() const
 {
     // TODO: (owen) -- I think we should consider all clients as non server since this is strictly peer to peer
     return false; // TODO: (owen) is this always true?
 }
 
 // Called to check if the server can act as a relay in the current configuration. See MultiplayerPeer.is_server_relay_supported.
-bool WbiSteamPeer::_is_server_relay_supported() const
+bool impl::WbiSteamPeerManager::_is_server_relay_supported() const
 {
     // I'm not sure how to support server relay so we'll just say no
     return false;
 }
 
 // Called when the MultiplayerAPI is polled. See MultiplayerAPI.poll.
-void WbiSteamPeer::_poll()
+void impl::WbiSteamPeerManager::_poll()
 {
     // TODO: (owen) poll incoming messages and send outgoing, etc.
     // Should outgoing be batched on the tick or go immediately? Does steam handle that consideration for us?
-    for(TransferChannel channel = static_cast<TransferChannel>(0); channel < TransferChannel::Max; ++channel)
+    for(impl::TransferChannel channel = static_cast<impl::TransferChannel>(0); channel < impl::TransferChannel::Max; ++channel)
     {
         SteamNetworkingMessage_t* messageBuffer[k_MaxChannelMessagesPerFrame];
         int count = SteamNetworkingMessages()->ReceiveMessagesOnChannel(static_cast<int>(channel), messageBuffer, k_MaxChannelMessagesPerFrame);
@@ -538,14 +588,14 @@ void WbiSteamPeer::_poll()
     }
 }
 
-void WbiSteamPeer::receiveMessageOnChannel(SteamNetworkingMessage_t* message, TransferChannel channel)
+void impl::WbiSteamPeerManager::receiveMessageOnChannel(SteamNetworkingMessage_t* message, impl::TransferChannel channel)
 {
     CSteamID peer = message->m_identityPeer.GetSteamID();
     ERR_FAIL_COND_MSG(!peer.IsValid(), "SteamId for message peer is invalid");
-    SteamPeerConnection* connection = findConnection(peer);
+    impl::Connection* connection = findConnection(peer);
     ERR_FAIL_COND_MSG(connection == nullptr, String("Connection for peer {0} who sent a message not found").format(peer.ConvertToUint64()));
-    SteamPacket packet((uint8_t*)message->GetData(), message->GetSize(), {peer, channel});
-    if(packet.get_channel() == TransferChannel::Default)
+    impl::Packet packet((uint8_t*)message->GetData(), message->GetSize(), {peer, channel});
+    if(packet.get_channel() == impl::TransferChannel::Default)
     {
         incoming_packets_.push_back(packet); // copy default packets out for delivery up to godot
     }
@@ -554,42 +604,44 @@ void WbiSteamPeer::receiveMessageOnChannel(SteamNetworkingMessage_t* message, Tr
 }
 
 // Called when a packet needs to be sent by the MultiplayerAPI, with p_buffer_size being the size of the binary p_buffer in bytes.
-Error WbiSteamPeer::_put_packet(const uint8_t *p_buffer, int32_t p_buffer_size)
+Error impl::WbiSteamPeerManager::_put_packet(const uint8_t *p_buffer, int32_t p_buffer_size)
 {
     // TODO: (owen) send the packet according to the current transfer mode, peer and channel etc.
     // do we just buffer the data and send later or do we just push it to Steam and let steam deal with it?
     // TODO: We should think about just sending the packet immediately rather than buffering them
-    SteamPacket packet(p_buffer, p_buffer_size, target_);
-    ERR_FAIL_COND_V_MSG(send_packet(packet) == k_EResultFail, Error::ERR_CANT_ACQUIRE_RESOURCE, "Failed to push packet"); 
+    impl::Packet packet(p_buffer, p_buffer_size, target_);
+    auto connection = findConnection(target_.peer_);
+    ERR_FAIL_COND_V_MSG(!connection, Error::ERR_DOES_NOT_EXIST, "Got _put_packet request for unknown target peer"); // TODO: (owen) figure out what the right return is in this case
+    ERR_FAIL_COND_V_MSG(connection->send_packet(packet) == k_EResultFail, Error::ERR_CONNECTION_ERROR, "Failed to send packet on connection"); 
     return OK;
 }
 
 // Called when a packet needs to be sent by the MultiplayerAPI, if _put_packet isn't implemented. Use this when extending this class via GDScript.
-Error WbiSteamPeer::_put_packet_script(const PackedByteArray &p_buffer)
+Error impl::WbiSteamPeerManager::_put_packet_script(const PackedByteArray &p_buffer)
 {
     return Error::ERR_UNAVAILABLE;
 }
 
 // Called when the "refuse new connections" status is set on this MultiplayerPeer (see MultiplayerPeer.refuse_new_connections).
-void WbiSteamPeer::_set_refuse_new_connections(bool p_enable)
+void impl::WbiSteamPeerManager::_set_refuse_new_connections(bool p_enable)
 {
     refuse_connections_ = p_enable;
 }
 
 // Called when the target peer to use is set for this MultiplayerPeer (see MultiplayerPeer.set_target_peer).
-void WbiSteamPeer::_set_target_peer(int32_t p_peer)
+void impl::WbiSteamPeerManager::_set_target_peer(int32_t p_peer)
 {
     target_.peer_ = godotToSteam(p_peer);
 }
 
 // Called when the channel to use is set for this MultiplayerPeer (see MultiplayerPeer.transfer_channel).
-void WbiSteamPeer::_set_transfer_channel(int32_t p_channel)
+void impl::WbiSteamPeerManager::_set_transfer_channel(int32_t p_channel)
 {
-    target_.channel_ = static_cast<TransferChannel>(p_channel);
+    target_.channel_ = static_cast<impl::TransferChannel>(p_channel);
 }
 
 // Called when the transfer mode is set on this MultiplayerPeer (see MultiplayerPeer.transfer_mode).
-void WbiSteamPeer::_set_transfer_mode(MultiplayerPeer::TransferMode p_mode)
+void impl::WbiSteamPeerManager::_set_transfer_mode(MultiplayerPeer::TransferMode p_mode)
 {
     target_.mode_ = p_mode;
 }
