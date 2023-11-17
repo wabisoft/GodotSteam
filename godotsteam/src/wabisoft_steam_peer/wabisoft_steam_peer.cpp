@@ -1,8 +1,8 @@
 #include "wabisoft_steam_peer.h"
 
 #include "steam/steam_api.h"
-#include "../utils/utils.hpp"
-#include "../utils/log.hpp"
+#include "wabisoft_cpp/utils/utils.hpp"
+#include "wabisoft_cpp/utils/log.hpp"
 
 #include <iterator>
 #include <sstream>
@@ -32,13 +32,14 @@ namespace
             "SEND", "RECV"
         };
 #ifndef _NDEBUG
-        std::stringstream ss;
-        ss << "[" << 
-            dirStr[static_cast<size_t>(dir)] << "]"
-            << "{" << packet.get_unique_id() << "}"
-            << "(" << packet.get_steam_id() << ")"
-            << ": size -- " << packet.size() << std::endl; 
-        log(DEBUG, ss.str());
+        log(DEBUG, "[{}]({} - {}): size -- {}", dirStr[static_cast<size_t>(dir)], packet.get_unique_id(), packet.get_steam_id(), packet.size());
+        // std::stringstream ss;
+        // ss << "[" << 
+        //     dirStr[static_cast<size_t>(dir)] << "]"
+        //     << "{" << packet.get_unique_id() << "}"
+        //     << "(" << packet.get_steam_id() << ")"
+        //     << ": size -- " << packet.size() << std::endl; 
+        // log(DEBUG, ss.str());
 #endif
     }
 
@@ -123,6 +124,7 @@ void impl::Connection::set_status(MultiplayerPeer::ConnectionStatus status)
     ERR_FAIL_COND_MSG(it == std::end(connectionFSM), String("Invalid connection status transition {0} -> {1}").format(Array::make(toString(connectionStatus_), toString(status))));
     auto old = connectionStatus_;
     connectionStatus_ = status;
+    log(DEBUG, "ConnectionStatus ({} - {}): {} -> {}", get_unique_id(), get_steam_id(), toString(old), toString(status));
     onConnectionStatusChange_(old, connectionStatus_);
 }
 
