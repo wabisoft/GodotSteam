@@ -143,6 +143,8 @@ namespace wabisoft
 
             void on_peer_connection_request(const SteamNetworkingIdentity& peerNetworkIdentity);
 
+            void set_connection_status(ConnectionStatus status, CallContext cc);
+
             void set_connection_status_change_callback(ConnectionStatusAsyncCallback callback) { onConnectionStatusChange_ = std::move(callback); }
 
             bool should_ping() const { return get_ping_interval() >= k_ConnectionIdlePingIntervalMS; }
@@ -154,10 +156,10 @@ namespace wabisoft
             void touchRecv() { lastRecvMessageTimeMS_ = wabisoft::utils::getTicksMS(); }
             void touchPing() { lastPingSendTimeMS_ = wabisoft::utils::getTicksMS(); }
 
-            wabisoft::fsm::FSM<ConnectionStatus, decltype(connectionFSMDecl)> connectionFSM_;
             wabisoft::fsm::FSM<PingStatus, decltype(pingFSMDecl)> pingFSM_;
         private:
 
+            wabisoft::fsm::FSM<ConnectionStatus, decltype(connectionFSMDecl)> connectionFSM_;
             uint64_t steamId_ = 0 ;
             int32_t uniqueId_ = -1; 
             // ConnectionStatus connectionStatus_ = ConnectionStatus::CONNECTION_DISCONNECTED;

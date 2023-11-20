@@ -9,6 +9,7 @@
 #include <sstream>
 #include <optional>
 #include <cassert>
+#include <utility>
 
 using namespace godot;
 
@@ -16,7 +17,6 @@ constexpr const uint8_t k_MaxChannelMessagesPerFrame = 255;
 using ConnectionStatus = MultiplayerPeer::ConnectionStatus;
 
 namespace impl = wabisoft::steam;
-
 
 namespace
 {
@@ -79,7 +79,7 @@ namespace
         case impl::PingStatus::Current: return "Current"; break;
         case impl::PingStatus::Awaiting: return "Awaiting"; break;
         case impl::PingStatus::Stale: return "Stale"; break;
-        default: assert(false); break; // bad value
+        default: wabisoft::unreachable(); break; // bad value
         }
     }
 
@@ -118,6 +118,12 @@ int32_t impl::Packet::get_send_mode_flags() const
 }
 
 
+
+void impl::Connection::_bind_methods()
+{
+
+}
+
 SteamNetworkingIdentity impl::Connection::get_steam_networking_id() const
 {
     return steamId64ToNetworkingId(get_steam_id());
@@ -135,10 +141,19 @@ void impl::Connection::on_peer_connection_request(const SteamNetworkingIdentity&
     bool success = SteamNetworkingMessages()->AcceptSessionWithUser(peerNetworkIdentity);
     if(!success)
     {
-        WABISOFT_FMS_TRANSITION(connectionFSM_, ConnectionStatus::CONNECTION_DISCONNECTED);
+        set_connection_status(ConnectionStatus::CONNECTION_DISCONNECTED, CALL_CONTEXT);
     }
     ERR_FAIL_COND_MSG(success, String("Failed to accept peer session for peer with Steam ID: {0}").format(peerNetworkIdentity.GetSteamID().ConvertToUint64())); 
     return;
+}
+
+void impl::Connection::set_connection_status(ConnectionStatus status, CallContext cc)
+{
+    auto oldStat = connectionFSM_.getState();
+    if(connectionFSM_.setStateWithCallContext(status, cc) == wabisoft::fsm::Result::OK)
+    {
+        onConnectionStatusChange_(oldStat, connectionFSM_.getState());
+    }
 }
 
 const impl::Packet& impl::WbiSteamPeerManager::peak_packet() const
@@ -192,12 +207,12 @@ void impl::WbiSteamPeerManager::_bind_methods()
 
 void impl::WbiSteamPeerManager::close_connection(Connection* conn, bool force)
 {
-    if(conn->get_connection_status() == ConnectionStatus::CONNECTION_CONNECTED)
+    if(conn->get_connection_status() == ConnectionStatus::CONNECTION_CONNECTED || conn->get_connection_status() == ConnectionStatus::CONNECTION_CONNECTING)
     {
         SteamNetworkingMessages()->CloseSessionWithUser(conn->get_steam_networking_id());
         if(!force)
         {
-            WABISOFT_FMS_TRANSITION(conn->connectionFSM_, ConnectionStatus::CONNECTION_DISCONNECTED);
+            conn->set_connection_status(ConnectionStatus::CONNECTION_DISCONNECTED, CALL_CONTEXT);
         }
     }
     uniqueIdToSteamId_.erase(conn->get_unique_id());
@@ -237,7 +252,7 @@ uint64_t impl::WbiSteamPeerManager::unique_to_steam(int32_t uniqueId)
 {
     auto conn = find_connection_by_unique_id(uniqueId);
     ERR_FAIL_COND_V_MSG(conn == nullptr, 0, "Unknown uniqueId");
-    return conn->get_unique_id();
+    return conn->get_steam_id();
 }
 
 
@@ -245,7 +260,7 @@ int32_t impl::WbiSteamPeerManager::steam_to_unique(uint64_t steamId)
 {
     auto conn = find_connection_by_steam_id(steamId);
     ERR_FAIL_COND_V_MSG(conn == nullptr, 0, "Unknown steamId");
-    return conn->get_steam_id();
+    return conn->get_unique_id();
 }
 
 bool impl::WbiSteamPeerManager::pingShared(impl::Connection& conn, impl::Ping::Type type)
@@ -259,7 +274,7 @@ bool impl::WbiSteamPeerManager::pingShared(impl::Connection& conn, impl::Ping::T
     log(DEBUG, "[{}]({} - {}): {}:{}:{}", "SEND", packet.get_unique_id(), packet.get_steam_id(), typeStrs[static_cast<size_t>(type)], steamId_, uniqueId_);
     if(!success && conn.get_connection_status() > ConnectionStatus::CONNECTION_DISCONNECTED)
     {
-        WABISOFT_FMS_TRANSITION(conn.connectionFSM_, ConnectionStatus::CONNECTION_DISCONNECTED);
+        conn.set_connection_status(ConnectionStatus::CONNECTION_DISCONNECTED, CALL_CONTEXT);
     }
     return success;
 }
@@ -268,7 +283,7 @@ bool impl::WbiSteamPeerManager::ping(Connection& conn)
 {
     if(pingShared(conn, Ping::Type::Ping))
     {
-        WABISOFT_FMS_TRANSITION(conn.pingFSM_, PingStatus::Awaiting);
+        WABISOFT_FSM_TRANSITION(conn.pingFSM_, PingStatus::Awaiting);
         conn.touchPing();
         return true;
     }
@@ -297,40 +312,41 @@ void impl::WbiSteamPeerManager::receive_message_on_channel(SteamNetworkingMessag
         SteamNetworkingMessages()->CloseSessionWithUser(message->m_identityPeer);
         return;
     }
+    conn->touchRecv();
     impl::Packet packet((uint8_t*)message->GetData(), message->GetSize(), {conn->get_steam_id(), conn->get_unique_id(), channel});
     log_packet(PacketDirection::Recv, packet);
     if(packet.get_channel() == impl::TransferChannel::Default)
     {
         incomingPackets_.push_back(packet); // copy default packets out for delivery up to godot
         assert(conn->get_unique_id() > 0);
-        WABISOFT_FMS_TRANSITION(conn->connectionFSM_, ConnectionStatus::CONNECTION_CONNECTED);
-        conn->touchRecv();
     }
     else if(packet.get_channel() == impl::TransferChannel::Init)
     {
         // For now we only expect to receive pings and pongs here
-        ERR_FAIL_COND_MSG(packet.size() != sizeof(Ping), "Received ill formed ping");
+        ERR_FAIL_COND_FMT(packet.size() != sizeof(Ping), "Received ill formed ping. Size is {}. Should be {}", packet.size(), sizeof(Ping));
         const Ping* p = reinterpret_cast<const Ping*>(packet.data());
-        ERR_FAIL_COND_MSG(!CSteamID(p->steamId_).IsValid(), "Received invalid steam id in ping");
-        ERR_FAIL_COND_MSG(p->uniqueId_ < 1, "Received invalid unique id in ping");
+        ERR_FAIL_COND_FMT(!CSteamID(p->steamId_).IsValid(), "Received invalid steam id in ping: {}", p->steamId_);
+        ERR_FAIL_COND_FMT(p->uniqueId_ < 1, "Received invalid unique id in ping: {}", p->uniqueId_);
+        ERR_FAIL_COND_FMT(p->steamId_ != conn->get_steam_id(), "Received ping from Connection with steam id that differs from connection steam id. Expected {}, got {}", conn->get_steam_id(), p->steamId_);
+
+        if(conn->get_unique_id() == -1) // if this is our first interaction with the connection we won't know it's unique id yet so we set it
+        {
+            assert(conn->get_connection_status() == ConnectionStatus::CONNECTION_CONNECTING); // we expect that we only don't know the connection's unique ID when we're connecting (TODO: maybe also disconnected?)
+            assert(p->steamId_ == conn->get_steam_id());
+            conn->set_unique_id(p->uniqueId_);
+            uniqueIdToSteamId_[p->uniqueId_] = p->steamId_;
+        }
         if(p->type_ == Ping::Type::Ping)
         {
-            ERR_FAIL_COND_MSG(p->steamId_ != conn->get_steam_id(), "Received ping from Connection with steam id that differs from connection steam id");
-            if(conn->get_unique_id() == -1) // if this is our first interaction with the connection we won't know it's unique id yet so we set it
-            {
-                assert(conn->get_connection_status() == ConnectionStatus::CONNECTION_CONNECTING); // we expect that we only don't know the connection's unique ID when we're connecting (TODO: maybe also disconnected?)
-                conn->set_unique_id(p->uniqueId_);
-            }
-            WABISOFT_FMS_TRANSITION(conn->connectionFSM_, ConnectionStatus::CONNECTION_CONNECTED);
-            conn->touchRecv();
-            if(p->type_ == Ping::Type::Ping)
-            {
-                pong(*conn);
-            }
+            pong(*conn);
         }
         else if(p->type_ == Ping::Type::Pong)
         {
-            WABISOFT_FMS_TRANSITION(conn->pingFSM_, PingStatus::Current);
+            if(get_connection_status() == ConnectionStatus::CONNECTION_CONNECTING)
+            {
+                conn->set_connection_status(ConnectionStatus::CONNECTION_CONNECTED, CALL_CONTEXT);
+            }
+            WABISOFT_FSM_TRANSITION(conn->pingFSM_, PingStatus::Current);
         }
     }
 }
@@ -360,7 +376,7 @@ bool impl::WbiSteamPeerManager::connect_to_steam_peer(uint64_t steamId)
     case ConnectionStatus::CONNECTION_DISCONNECTED:
         if(ping(*pConn))
         {
-            WABISOFT_FMS_TRANSITION(pConn->connectionFSM_, ConnectionStatus::CONNECTION_CONNECTING);
+            pConn->set_connection_status(ConnectionStatus::CONNECTION_CONNECTING, CALL_CONTEXT);
             log(DEBUG, "Sent connection request to peer {}", steamId);
             return true;
         }
@@ -418,8 +434,7 @@ void impl::WbiSteamPeerManager::on_steam_networking_messages_session_failed(Stea
     log(DEBUG, failure->m_info.m_szEndDebug);
     if(conn->get_connection_status() > ConnectionStatus::CONNECTION_DISCONNECTED)
     {
-        WABISOFT_FMS_TRANSITION(conn->connectionFSM_, ConnectionStatus::CONNECTION_DISCONNECTED);
-        // conn->set_connection_status(ConnectionStatus::CONNECTION_DISCONNECTED);
+        conn->set_connection_status(ConnectionStatus::CONNECTION_DISCONNECTED, CALL_CONTEXT);
     }
 }
 
@@ -662,7 +677,7 @@ void impl::WbiSteamPeerManager::pollPings()
         case PingAction::CheckTimeout:
             if(conn->should_timeout())
             {
-                WABISOFT_FMS_TRANSITION(conn->pingFSM_, PingStatus::Stale);
+                WABISOFT_FSM_TRANSITION(conn->pingFSM_, PingStatus::Stale);
                 close_connection(conn, false);
                 conn = nullptr;
             }

@@ -25,6 +25,7 @@ void initialize_godotsteam(ModuleInitializationLevel level){
         ClassDB::register_class<SteamConnection>();
         ClassDB::register_class<SteamID>();
 		ClassDB::register_class<wabisoft::steam::WbiSteamPeerManager>();
+        ClassDB::register_class<wabisoft::steam::Connection>(); // need to register for ref counting
 		SteamPtr = memnew(Steam);
 		Engine::get_singleton()->register_singleton("Steam", Steam::get_singleton());
 	}
