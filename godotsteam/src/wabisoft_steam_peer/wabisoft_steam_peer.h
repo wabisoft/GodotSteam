@@ -7,6 +7,8 @@
 #include <functional>
 #include <ostream>
 
+#include "wabisoft_cpp/utils/fsm.hpp"
+
 #include "../godotsteam.h"
 
 template <typename T>
@@ -19,6 +21,10 @@ namespace wabisoft
 {
     namespace steam
     {
+
+        constexpr const uint32_t k_ConnectionIdlePingIntervalMS = 30000; // 30 seconds
+        constexpr const uint32_t k_ConnectionPingAwaitTimeoutIntervalMS = 5000; // 5 seconds
+
         void start();
         void stop();
 
@@ -81,38 +87,82 @@ namespace wabisoft
 
         using ConnectionStatusAsyncCallback = asyncCallback<void(ConnectionStatus oldStatus, ConnectionStatus newStatus)>;
 
+        constexpr std::pair<ConnectionStatus, ConnectionStatus> connectionFSMDecl[] = {
+            {ConnectionStatus::CONNECTION_DISCONNECTED, ConnectionStatus::CONNECTION_CONNECTING}, // start connection attempt
+            {ConnectionStatus::CONNECTION_CONNECTING, ConnectionStatus::CONNECTION_DISCONNECTED}, // failed connection attempt
+            {ConnectionStatus::CONNECTION_CONNECTING, ConnectionStatus::CONNECTION_CONNECTED}, // succesfull connection
+            {ConnectionStatus::CONNECTION_CONNECTED, ConnectionStatus::CONNECTION_DISCONNECTED}, // disconnect
+        };
+
+        enum class PingStatus
+        {
+            Unknown = 0, // the current ping status of this connection is unknown
+            Current, // the connection is up to date with pings
+            Awaiting, // the connection awaiting a ping in flight
+            Stale, // the connection has been pinged without response and is now stale
+        };
+
+        constexpr std::pair<PingStatus, PingStatus> pingFSMDecl[] = {
+            { PingStatus::Unknown, PingStatus::Awaiting }, // First ping
+            { PingStatus::Current, PingStatus::Awaiting }, // ping
+            { PingStatus::Awaiting, PingStatus::Current }, // pong 
+            { PingStatus::Awaiting, PingStatus::Stale }, // Timeout
+        };
+
         class Connection : public RefCounted
         {
             GDCLASS(Connection, RefCounted)
         protected:
             static void _bind_methods();
         public:
-            Connection() {}
+
+
+            Connection() 
+                : connectionFSM_("ConnectionStatus", ConnectionStatus::CONNECTION_DISCONNECTED, connectionFSMDecl)
+                , pingFSM_("PingStatus", PingStatus::Unknown, pingFSMDecl)
+            {}
             Connection(const Connection& other)
-                : steamId_(other.steamId_), uniqueId_(other.uniqueId_)
+                : steamId_(other.steamId_)
+                , uniqueId_(other.uniqueId_)
+                , connectionFSM_("ConnectionStatus", ConnectionStatus::CONNECTION_DISCONNECTED, connectionFSMDecl)
+                , pingFSM_("PingStatus", PingStatus::Unknown, pingFSMDecl)
             {}
             explicit Connection(uint64_t steamPeer)
                 : steamId_(steamPeer)
+                , connectionFSM_("ConnectionStatus", ConnectionStatus::CONNECTION_DISCONNECTED, connectionFSMDecl)
+                , pingFSM_("PingStatus", PingStatus::Unknown, pingFSMDecl)
             {
             }
             uint64_t get_steam_id() const { return steamId_; }
             int32_t get_unique_id() const { return uniqueId_; }
+            ConnectionStatus get_connection_status() const { return connectionFSM_.getState(); }
+            PingStatus get_ping_status() const { return pingFSM_.getState(); }
+
             SteamNetworkingIdentity get_steam_networking_id() const;
-            ConnectionStatus get_status() const { return connectionStatus_; }
+            void set_unique_id(int32_t uniqueId);
 
             void on_peer_connection_request(const SteamNetworkingIdentity& peerNetworkIdentity);
-            void set_status(ConnectionStatus);
-            void set_status_change_callback(ConnectionStatusAsyncCallback callback) { onConnectionStatusChange_ = std::move(callback); }
-            bool should_ping() const;
-            void touch();
-            void set_unique_id(int32_t uniqueId) { uniqueId_ = uniqueId; }
 
+            void set_connection_status_change_callback(ConnectionStatusAsyncCallback callback) { onConnectionStatusChange_ = std::move(callback); }
+
+            bool should_ping() const { return get_ping_interval() >= k_ConnectionIdlePingIntervalMS; }
+            bool should_timeout() const { return get_ping_stale_interval() >= k_ConnectionPingAwaitTimeoutIntervalMS; }
+
+            uint64_t get_ping_interval() const { return wabisoft::utils::getTicksMS() - lastRecvMessageTimeMS_; }
+            uint64_t get_ping_stale_interval() const { return wabisoft::utils::getTicksMS() - lastPingSendTimeMS_; }
+
+            void touchRecv() { lastRecvMessageTimeMS_ = wabisoft::utils::getTicksMS(); }
+            void touchPing() { lastPingSendTimeMS_ = wabisoft::utils::getTicksMS(); }
+
+            wabisoft::fsm::FSM<ConnectionStatus, decltype(connectionFSMDecl)> connectionFSM_;
+            wabisoft::fsm::FSM<PingStatus, decltype(pingFSMDecl)> pingFSM_;
         private:
 
             uint64_t steamId_ = 0 ;
             int32_t uniqueId_ = -1; 
-            ConnectionStatus connectionStatus_ = ConnectionStatus::CONNECTION_DISCONNECTED;
-            uint64_t lastMessageTimeMS_ = 0;
+            // ConnectionStatus connectionStatus_ = ConnectionStatus::CONNECTION_DISCONNECTED;
+            uint64_t lastRecvMessageTimeMS_ = 0;
+            uint64_t lastPingSendTimeMS_ = 0;
             ConnectionStatusAsyncCallback onConnectionStatusChange_;
 
         };
@@ -153,7 +203,7 @@ namespace wabisoft
             bool pong(Connection& conn);
             void receive_message_on_channel(SteamNetworkingMessage_t* message, TransferChannel channel);
             void on_connection_status_change(uint64_t steamId, ConnectionStatus oldStatus, ConnectionStatus newStatus);
-
+            void pollPings();
 
             // Steam callbacks 
             STEAM_CALLBACK(WbiSteamPeerManager, on_steam_networking_messages_session_request, SteamNetworkingMessagesSessionRequest_t);
