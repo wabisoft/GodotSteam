@@ -113,8 +113,11 @@ int32_t impl::Packet::get_send_mode_flags() const
 
 void impl::Connection::set_status(MultiplayerPeer::ConnectionStatus status)
 {
-    assert(connectionStatus_ != status);
-    ERR_FAIL_COND_MSG(connectionStatus_ == status, "Attempted to set status to the same value");
+    if(get_status() == status)
+    {
+        log(DEBUG, "Connection status set to {} while already in that status. Double set");
+        return;
+    }
     auto it = std::find_if(std::begin(connectionFSM), std::end(connectionFSM),
     [&](const auto& pair)
     {
