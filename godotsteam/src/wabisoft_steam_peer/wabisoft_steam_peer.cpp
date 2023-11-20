@@ -367,6 +367,7 @@ bool impl::WbiSteamPeerManager::connect_to_steam_peer(uint64_t steamId)
     case ConnectionStatus::CONNECTION_DISCONNECTED:
         if(ping(*pConn))
         {
+            pConn->set_status(ConnectionStatus::CONNECTION_CONNECTING);
             log(DEBUG, "Sent connection request to peer"); // TODO: fmt logs!
             return true;
         }
