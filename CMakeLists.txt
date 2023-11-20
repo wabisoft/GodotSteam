@@ -49,29 +49,28 @@ target_link_libraries(${PROJECT_NAME} PUBLIC ${STEAM_LIB_PATH})
 
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/godotsteam/src" PREFIX src FILES ${SOURCES})
 
-if(DEFINED ENV{ADDONS_DIR})
-    set(ADDONS_DIR $ENV{ADDONS_DIR})
-    message(STATUS "ADDONS_DIR is ${ADDONS_DIR}")
+set(ADDONS_DIR "${CMAKE_CURRENT_BINARY_DIR}" CACHE STRING "The directory to copy the full gdextension deps to, i.e. the resulting dll for this ${PROJECT_NAME} and the .gdextension file and supplementary dlls")
 
-    set(GODOTSTEAM_OUTPUT_DIRECTORY ${ADDONS_DIR}/${PROJECT_NAME})
-    set(GODOTSTEAM_BINARY_OUTPUT_DIRECTORY ${GODOTSTEAM_OUTPUT_DIRECTORY}/${CMAKE_SYSTEM_NAME})
-    message(STATUS "Setting output for ${PROJECT_NAME} to ${GODOTSTEAM_OUTPUT_DIRECTORY}")
-    set_target_properties(${PROJECT_NAME} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG ${GODOTSTEAM_BINARY_OUTPUT_DIRECTORY}
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE ${GODOTSTEAM_BINARY_OUTPUT_DIRECTORY}
-    )
-    #TODO: don't hard code the win64 path?
-    add_custom_command(
-            TARGET ${PROJECT_NAME}  POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy
-                    ${STEAM_BIN_DIR}/win64/steam_api64.dll
-                    ${GODOTSTEAM_BINARY_OUTPUT_DIRECTORY}/steam_api64.dll
-                    )
+message(STATUS "ADDONS_DIR is ${ADDONS_DIR}")
 
-    add_custom_command(
-            TARGET ${PROJECT_NAME}  POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy
-                    ${CMAKE_CURRENT_SOURCE_DIR}/godotsteam.gdextension
-                    ${GODOTSTEAM_OUTPUT_DIRECTORY}/godotsteam.gdextension
-                    )
-endif()
+set(GODOTSTEAM_OUTPUT_DIRECTORY ${ADDONS_DIR}/${PROJECT_NAME})
+set(GODOTSTEAM_BINARY_OUTPUT_DIRECTORY ${GODOTSTEAM_OUTPUT_DIRECTORY}/${CMAKE_SYSTEM_NAME})
+message(STATUS "Setting output for ${PROJECT_NAME} to ${GODOTSTEAM_OUTPUT_DIRECTORY}")
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG ${GODOTSTEAM_BINARY_OUTPUT_DIRECTORY}
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE ${GODOTSTEAM_BINARY_OUTPUT_DIRECTORY}
+)
+#TODO: don't hard code the win64 path?
+add_custom_command(
+        TARGET ${PROJECT_NAME}  POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${STEAM_BIN_DIR}/win64/steam_api64.dll
+                ${GODOTSTEAM_BINARY_OUTPUT_DIRECTORY}/steam_api64.dll
+                )
+
+add_custom_command(
+        TARGET ${PROJECT_NAME}  POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+                ${CMAKE_CURRENT_SOURCE_DIR}/godotsteam.gdextension
+                ${GODOTSTEAM_OUTPUT_DIRECTORY}/godotsteam.gdextension
+                )
