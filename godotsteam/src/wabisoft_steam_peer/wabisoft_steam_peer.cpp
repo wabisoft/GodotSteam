@@ -147,7 +147,7 @@ void impl::Connection::on_peer_connection_request(const SteamNetworkingIdentity&
     return;
 }
 
-void impl::Connection::set_connection_status(ConnectionStatus status, CallContext cc)
+void impl::Connection::set_connection_status(ConnectionStatus status, wabisoft::CallContext cc)
 {
     auto oldStat = connectionFSM_.getState();
     if(connectionFSM_.setStateWithCallContext(status, cc) == wabisoft::fsm::Result::OK)
