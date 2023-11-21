@@ -511,7 +511,7 @@ MultiplayerPeer::ConnectionStatus impl::WbiSteamPeerManager::_get_connection_sta
         case ConnectionStatus::CONNECTION_DISCONNECTED: return ConnectionStatus::CONNECTION_DISCONNECTED;
         }
    }
-   return ConnectionStatus::CONNECTION_CONNECTING;
+   return ConnectionStatus::CONNECTION_CONNECTED;
 }
 
 // Called when the maximum allowed packet size (in bytes) is requested by the MultiplayerAPI.
