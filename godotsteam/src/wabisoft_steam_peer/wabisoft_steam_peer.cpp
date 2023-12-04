@@ -264,6 +264,10 @@ uint64_t impl::WbiSteamPeerManager::unique_to_steam(int32_t uniqueId)
 
 int32_t impl::WbiSteamPeerManager::steam_to_unique(uint64_t steamId)
 {
+    if(steamId == steamId_)
+    {
+        return uniqueId_;
+    }
     auto conn = find_connection_by_steam_id(steamId);
     ERR_FAIL_COND_V_MSG(conn == nullptr, 0, "Unknown steamId");
     return conn->get_unique_id();
