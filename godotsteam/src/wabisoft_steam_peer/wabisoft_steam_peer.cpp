@@ -252,6 +252,10 @@ ConnectionStatus impl::WbiSteamPeerManager::get_connection_status_by_unique_id(i
 
 uint64_t impl::WbiSteamPeerManager::unique_to_steam(int32_t uniqueId)
 {
+    if(uniqueId == uniqueId_)
+    {
+        return steamId_;
+    }
     auto conn = find_connection_by_unique_id(uniqueId);
     ERR_FAIL_COND_V_MSG(conn == nullptr, 0, "Unknown uniqueId");
     return conn->get_steam_id();
