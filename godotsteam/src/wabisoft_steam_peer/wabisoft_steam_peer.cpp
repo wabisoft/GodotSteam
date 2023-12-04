@@ -412,7 +412,7 @@ void impl::WbiSteamPeerManager::disconnect_from_steam_peer(uint64_t steamId, boo
 void impl::WbiSteamPeerManager::disconnect_from_unique_peer(int32_t uniqueId, bool force)
 {
     auto conn = find_connection_by_unique_id(uniqueId);
-    ERR_FAIL_COND_MSG(conn == nullptr, "Could not find connection for unique peer {}", uniqueId);
+    ERR_FAIL_COND_FMT(conn == nullptr, "Could not find connection for unique peer {}", uniqueId);
     close_connection(conn, force);
     conn = nullptr;
 }
