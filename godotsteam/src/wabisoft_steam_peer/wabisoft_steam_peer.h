@@ -190,13 +190,15 @@ namespace wabisoft
 
         public:
             WbiSteamPeerManager();
+
             // Bound methods
-            
             ConnectionStatus get_connection_status_by_steam_id(uint64_t steamId);
             ConnectionStatus get_connection_status_by_unique_id(int32_t uniqueId);
             bool connect_to_steam_peer(uint64_t steamId);
             void disconnect_from_steam_peer(uint64_t steamId, bool force); // internal overload
             void disconnect_from_unique_peer(int32_t uniqueId, bool force);
+            godot::Array get_connected_unique_ids() const;
+            godot::Array get_connected_steam_ids() const;
 
             uint64_t unique_to_steam(int32_t uniqueId);
             int32_t steam_to_unique(uint64_t steamId);

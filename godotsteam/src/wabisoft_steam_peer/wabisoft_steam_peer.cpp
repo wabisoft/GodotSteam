@@ -188,23 +188,16 @@ impl::Connection* impl::WbiSteamPeerManager::find_connection_by_unique_id(int32_
 void impl::WbiSteamPeerManager::_bind_methods()
 {
 
-/*
-    ConnectionStatus get_connection_status_by_steam_id(uint64_t steamId);
-    ConnectionStatus get_connection_status_by_unique_id(int32_t uniqueId);
-    bool connect_to_steam_peer(uint64_t steamId);
-    void disconnect_from_steam_peer(uint64_t steamId, bool force); // internal overload
-    void disconnect_from_unique_peer(int32_t uniqueId, bool force);
-*/
     ClassDB::bind_method(D_METHOD("get_connection_status_by_steam_id", "steam_id"), &impl::WbiSteamPeerManager::get_connection_status_by_steam_id);
     ClassDB::bind_method(D_METHOD("get_connection_status_by_unique_id", "unique_id"), &impl::WbiSteamPeerManager::get_connection_status_by_unique_id);
     ClassDB::bind_method(D_METHOD("connect_to_steam_peer", "steam_id"), &impl::WbiSteamPeerManager::connect_to_steam_peer);
     ClassDB::bind_method(D_METHOD("disconnect_from_steam_peer", "steam_id"), &impl::WbiSteamPeerManager::disconnect_from_steam_peer);
     ClassDB::bind_method(D_METHOD("disconnect_from_unique_peer", "unique_id"), &impl::WbiSteamPeerManager::disconnect_from_unique_peer);
-    // ClassDB::bind_method(D_METHOD("init", "steam_lobby_id"), &impl::WbiSteamPeerManager::init);
     ClassDB::bind_method(D_METHOD("poll"), &impl::WbiSteamPeerManager::_poll);
-    // ClassDB::bind_method(D_METHOD("getConnectionStatus", "peer_steam_id"), &impl::WbiSteamPeerManager::getConnectionStatus);
     ClassDB::bind_method(D_METHOD("unique_to_steam", "unique_id"), &impl::WbiSteamPeerManager::unique_to_steam);
     ClassDB::bind_method(D_METHOD("steam_to_unique", "steam_id"), &impl::WbiSteamPeerManager::steam_to_unique);
+    ClassDB::bind_method(D_METHOD("get_connected_unique_ids"), &impl::WbiSteamPeerManager::get_connected_unique_ids);
+    ClassDB::bind_method(D_METHOD("get_connected_steam_ids"), &impl::WbiSteamPeerManager::get_connected_steam_ids);
 }
 
 void impl::WbiSteamPeerManager::close_connection(Connection* conn, bool force)
@@ -415,6 +408,26 @@ void impl::WbiSteamPeerManager::disconnect_from_unique_peer(int32_t uniqueId, bo
     ERR_FAIL_COND_FMT(conn == nullptr, "Could not find connection for unique peer {}", uniqueId);
     close_connection(conn, force);
     conn = nullptr;
+}
+
+godot::Array impl::WbiSteamPeerManager::get_connected_unique_ids() const
+{
+    godot::Array uniqueIds;
+    for(auto& pair : peerConnections_)
+    {
+        uniqueIds.push_back(pair.value->get_unique_id());
+    }
+    return uniqueIds;
+}
+
+godot::Array impl::WbiSteamPeerManager::get_connected_steam_ids() const
+{
+    godot::Array steamIds;
+    for(auto& pair : peerConnections_)
+    {
+        steamIds.push_back(pair.value->get_steam_id());
+    }
+    return steamIds;
 }
 
 void impl::WbiSteamPeerManager::on_connection_status_change(uint64_t steamId, ConnectionStatus oldStatus, ConnectionStatus newStatus)
